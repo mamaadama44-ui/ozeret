@@ -165,6 +165,7 @@ function App() {
   const [chatMsgs, setChatMsgs] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [editTask, setEditTask] = useState(null);
 
   const tk = todayKey();
   const greeting = useMemo(() => GREETINGS[new Date().getDate() % GREETINGS.length], []);
@@ -383,6 +384,29 @@ function App() {
   };
   const clearChat = () => setChatMsgs([]);
 
+  // ----- עריכת משימה -----
+  const openEdit = (task) => setEditTask({ ...task });
+  const closeEdit = () => setEditTask(null);
+  const saveEdit = () => {
+    if (!editTask || !editTask.title.trim()) return;
+    setTasks((p) => p.map((t) => t.id === editTask.id ? {
+      ...t,
+      title: editTask.title.trim(),
+      due: editTask.due || "",
+      prio: editTask.prio,
+      owner: editTask.owner,
+      cat: editTask.cat,
+    } : t));
+    setEditTask(null);
+    showToast("המשימה עודכנה.");
+  };
+  const deleteTask = () => {
+    if (!editTask) return;
+    setTasks((p) => p.filter((t) => t.id !== editTask.id));
+    setEditTask(null);
+    showToast("המשימה נמחקה.");
+  };
+
   const prioColor = (p) => (p === "high" ? C.danger : p === "med" ? C.warn : C.dim);
 
   if (!loaded) return <div style={{ ...S.root, textAlign: "center", paddingTop: 80, color: C.dim }}>טוען…</div>;
@@ -475,6 +499,7 @@ function App() {
                         <button style={S.fbBtn} onClick={() => openFeedback(t)}>
                           תן משוב{bonusArr(t.feedback).length ? " (" + bonusArr(t.feedback).length + ")" : ""}
                         </button>
+                        <button style={S.editBtn} onClick={() => openEdit(t)}>✎ ערוך</button>
                       </div>
                     </div>
                     {bonusArr(t.steps).length > 0 && (
@@ -731,6 +756,52 @@ function App() {
         </div>
       )}
 
+      {/* חלון עריכת משימה */}
+      {editTask && (
+        <div style={S.modalWrap} onClick={closeEdit}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()} dir="rtl">
+            <div style={S.modalHead}>
+              <div style={S.modalTitle}>עריכת משימה</div>
+              <button style={S.modalX} onClick={closeEdit}>✕</button>
+            </div>
+
+            <label style={S.editLabel}>שם המשימה</label>
+            <input style={S.modalTextarea} value={editTask.title}
+              onChange={(e) => setEditTask({ ...editTask, title: e.target.value })} />
+
+            <label style={S.editLabel}>תאריך יעד</label>
+            <input type="date" style={S.editInput} value={editTask.due || ""}
+              onChange={(e) => setEditTask({ ...editTask, due: e.target.value })} />
+
+            <label style={S.editLabel}>דחיפות</label>
+            <div style={S.editChips}>
+              {[["high", "דחוף"], ["med", "רגיל"], ["low", "נמוך"]].map(([v, l]) => (
+                <button key={v} onClick={() => setEditTask({ ...editTask, prio: v })}
+                  style={{ ...S.editChip, ...(editTask.prio === v ? { background: prioColor(v), color: "#1d1206", borderColor: prioColor(v) } : {}) }}>{l}</button>
+              ))}
+            </div>
+
+            <label style={S.editLabel}>בעלים</label>
+            <div style={S.editChips}>
+              {["בני", "צוות", "הזוג", "גיא", "אליק"].map((o) => (
+                <button key={o} onClick={() => setEditTask({ ...editTask, owner: o })}
+                  style={{ ...S.editChip, ...(editTask.owner === o ? { background: C.accent2, color: "#1d1206", borderColor: C.accent2 } : {}) }}>{o}</button>
+              ))}
+            </div>
+
+            <label style={S.editLabel}>קטגוריה</label>
+            <input style={S.editInput} value={editTask.cat || ""}
+              onChange={(e) => setEditTask({ ...editTask, cat: e.target.value })} placeholder="טיסה / פרויקט / כללי…" />
+
+            <div style={{ ...S.modalBtns, marginTop: 20 }}>
+              <button style={S.btnAccent} onClick={saveEdit}>שמור</button>
+              <button style={S.btnGhost} onClick={closeEdit}>ביטול</button>
+              <button style={S.deleteBtn} onClick={deleteTask}>מחק</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && <div style={S.toast}>{toast}</div>}
       <footer style={S.footer}>{firebaseReady ? "מחובר ל-Firebase · הנתונים נשמרים." : "מצב מקומי — חבר Firebase לשמירה קבועה (ראה מדריך)."}</footer>
     </div>
@@ -789,6 +860,12 @@ const S = {
   taskActions: { display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 },
   breakBtn: { background: "transparent", border: "1px solid " + C.accent2, color: C.accent2, borderRadius: 9, padding: "7px 11px", fontSize: 13, cursor: "pointer" },
   fbBtn: { background: "transparent", border: "1px solid " + C.accent, color: C.accent, borderRadius: 9, padding: "7px 11px", fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" },
+  editBtn: { background: "transparent", border: "1px solid " + C.line, color: C.dim, borderRadius: 9, padding: "7px 11px", fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" },
+  editLabel: { display: "block", fontSize: 13, color: C.accent2, fontWeight: 600, marginTop: 14, marginBottom: 6 },
+  editInput: { width: "100%", background: C.bg, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "11px 13px", outline: "none", boxSizing: "border-box" },
+  editChips: { display: "flex", gap: 8, flexWrap: "wrap" },
+  editChip: { background: "transparent", border: "1px solid " + C.line, color: C.text, borderRadius: 20, padding: "7px 14px", fontSize: 14, cursor: "pointer" },
+  deleteBtn: { background: "transparent", border: "1px solid " + C.danger, color: C.danger, borderRadius: 9, padding: "10px 14px", cursor: "pointer", fontSize: 13, marginRight: "auto" },
   steps: { marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 8 },
   stepRow: { display: "flex", gap: 10, alignItems: "center", background: "transparent", border: "none", cursor: "pointer", padding: 0, textAlign: "right" },
   stepDot: { width: 16, height: 16, borderRadius: "50%", border: "2px solid", flexShrink: 0 },
