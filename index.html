@@ -196,7 +196,7 @@ function App() {
 
   /* ----- טעינה ראשונית מ-Firebase ----- */
   useEffect(() => {
-    const savedKey = (window.sessionStorage && sessionStorage.getItem("anthKey")) || "";
+    const savedKey = (window.localStorage && localStorage.getItem("anthKey")) || (window.sessionStorage && sessionStorage.getItem("anthKey")) || "";
     if (savedKey) setApiKey(savedKey);
     if (!firebaseReady) { setLoaded(true); return; }
     DOC_REF().get().then((snap) => {
@@ -227,7 +227,7 @@ function App() {
 
   const saveKey = (v) => {
     setApiKey(v);
-    try { if (window.sessionStorage) sessionStorage.setItem("anthKey", v); } catch (e) {}
+    try { if (window.localStorage) localStorage.setItem("anthKey", v); } catch (e) {}
   };
 
   const openTasks = tasks.filter((t) => t.status !== "done");
@@ -946,16 +946,16 @@ const S = {
   voiceToggle: { display: "flex", gap: 6, alignItems: "center", color: C.dim, fontSize: 13, cursor: "pointer" },
   tabs: { display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" },
   tab: { background: "transparent", border: "1px solid " + C.line, color: C.dim, borderRadius: 10, padding: "9px 18px", fontSize: 15, fontWeight: 600, cursor: "pointer" },
-  tabActive: { background: C.accent, color: "#ffffff", borderColor: C.accent },
-  checkin: { marginTop: 22, background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 20 },
+  tabActive: { background: C.accent, color: "#ffffff", borderColor: C.accent, boxShadow: "0 2px 8px rgba(91,110,245,0.3)" },
+  checkin: { marginTop: 22, background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 20, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
   greeting: { fontSize: 18, fontWeight: 600, fontFamily: "'Frank Ruhl Libre', serif" },
   checkinRow: { display: "flex", gap: 10, marginTop: 14 },
   focusInput: { flex: 1, background: C.bg, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "12px 14px", outline: "none" },
   focusLocked: { marginTop: 22, background: "rgba(91,110,245,0.08)", border: "1px solid " + C.accent, borderRadius: 16, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
   focusText: { fontSize: 20, fontWeight: 700, marginTop: 2 },
   grid: { marginTop: 26, display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 26 },
-  sectionTitle: { fontSize: 13, letterSpacing: 2, color: C.accent2, fontWeight: 700, marginBottom: 14 },
-  nextCard: { background: "linear-gradient(135deg, " + C.panel2 + ", " + C.panel + ")", border: "1px solid " + C.accent, borderRadius: 14, padding: 16, marginBottom: 16 },
+  sectionTitle: { fontSize: 13, letterSpacing: 1.5, color: C.dim, fontWeight: 700, marginBottom: 14, textTransform: "uppercase" },
+  nextCard: { background: "linear-gradient(135deg, " + C.panel2 + ", " + C.panel + ")", border: "1px solid " + C.accent, borderRadius: 14, padding: 16, marginBottom: 16, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
   nextTitle: { fontSize: 19, fontWeight: 700, marginTop: 4 },
   nextMeta: { marginTop: 8, fontSize: 13 },
   addRow: { display: "flex", gap: 8, marginBottom: 14 },
