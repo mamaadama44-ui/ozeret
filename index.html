@@ -161,6 +161,7 @@ function App() {
   const [lastAnalyzedAt, setLastAnalyzedAt] = useState(0);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [showAllTasks, setShowAllTasks] = useState(false);
 
   const tk = todayKey();
   const greeting = useMemo(() => GREETINGS[new Date().getDate() % GREETINGS.length], []);
@@ -209,6 +210,12 @@ function App() {
   const nextTask = [...flightOpen].sort((a, b) => (a.due || "9").localeCompare(b.due || "9"))[0];
   const todayHabits = habitLog[tk] || {};
   const habitsDone = habits.filter((h) => todayHabits[h.id]).length;
+
+  // משימות להיום + דחופות (48 שעות) — למסך הבית הפשוט
+  const sortedOpen = openTasks.slice().sort((a, b) => (a.due || "9").localeCompare(b.due || "9"));
+  const todayTasks = sortedOpen.filter((t) => t.due && daysUntil(t.due) <= 2);
+  const laterTasks = sortedOpen.filter((t) => !(t.due && daysUntil(t.due) <= 2));
+  const homeTasks = showAllTasks ? sortedOpen : todayTasks;
 
   /* ----- קול ----- */
   const speak = (text) => {
@@ -379,7 +386,7 @@ function App() {
 
           <div style={S.grid} className="grid">
             <div>
-              <SectionTitle>המשימות שלך</SectionTitle>
+              <SectionTitle>היום שלי</SectionTitle>
               {nextTask && (
                 <div style={S.nextCard}>
                   <div style={S.dimSmall}>הבא בתור · הכי דחוף</div>
@@ -399,7 +406,7 @@ function App() {
                 <button style={S.btnAccent} onClick={addTask}>+</button>
               </div>
               <div style={S.taskList}>
-                {openTasks.slice().sort((a, b) => (a.due || "9").localeCompare(b.due || "9")).map((t) => (
+                {homeTasks.map((t) => (
                   <div key={t.id} style={S.taskCard}>
                     <div style={S.taskHead}>
                       <button style={S.check} onClick={() => setStatus(t.id, "done")} aria-label="בוצע" />
@@ -432,7 +439,16 @@ function App() {
                     )}
                   </div>
                 ))}
-                {openTasks.length === 0 && <div style={S.empty}>הכל סגור. נשום רגע — מגיע לך.</div>}
+                {homeTasks.length === 0 && (
+                  <div style={S.empty}>
+                    {openTasks.length === 0 ? "הכל סגור. נשום רגע — מגיע לך." : "אין משימות דחופות להיום. נשום — ותכנן קדימה אם תרצה."}
+                  </div>
+                )}
+                {laterTasks.length > 0 && (
+                  <button style={S.showAllBtn} onClick={() => setShowAllTasks(!showAllTasks)}>
+                    {showAllTasks ? "הצג רק את היום ▲" : "הצג את כל המשימות (" + laterTasks.length + " נוספות) ▼"}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -727,6 +743,7 @@ const S = {
   btnGhost: { background: "transparent", color: C.dim, border: "1px solid " + C.line, borderRadius: 9, padding: "10px 14px", cursor: "pointer", fontSize: 13 },
   dimSmall: { fontSize: 12, color: C.dim },
   empty: { color: C.dim, textAlign: "center", padding: 30 },
+  showAllBtn: { background: "transparent", border: "1px dashed " + C.line, color: C.dim, borderRadius: 10, padding: "11px 14px", fontSize: 14, cursor: "pointer", marginTop: 4, width: "100%" },
   modalWrap: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 },
   modal: { background: C.panel, border: "1px solid " + C.line, borderRadius: 18, padding: 22, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto" },
   modalHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 },
