@@ -189,6 +189,11 @@ function App() {
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [editTask, setEditTask] = useState(null);
+  // טיימר פומודורו
+  const [pomoMode, setPomoMode] = useState("work"); // work | break
+  const [pomoLeft, setPomoLeft] = useState(25 * 60); // שניות
+  const [pomoRunning, setPomoRunning] = useState(false);
+  const [pomoCount, setPomoCount] = useState(0); // כמה סבבי עבודה הושלמו
 
   const tk = todayKey();
   const greeting = useMemo(() => GREETINGS[new Date().getDate() % GREETINGS.length], []);
@@ -229,6 +234,36 @@ function App() {
     setApiKey(v);
     try { if (window.localStorage) localStorage.setItem("anthKey", v); } catch (e) {}
   };
+
+  // ----- טיק של טיימר פומודורו -----
+  useEffect(() => {
+    if (!pomoRunning) return;
+    const id = setInterval(() => {
+      setPomoLeft((prev) => {
+        if (prev <= 1) {
+          // נגמר הזמן — מעבר בין עבודה להפסקה
+          const speak = (txt) => { try { if ("speechSynthesis" in window) { const u = new SpeechSynthesisUtterance(txt); u.lang = "he-IL"; speechSynthesis.speak(u); } } catch (e) {} };
+          if (pomoMode === "work") {
+            setPomoCount((c) => c + 1);
+            setPomoMode("break");
+            speak("כל הכבוד! סיימת סבב עבודה. קח הפסקה של חמש דקות.");
+            showToast("🎉 סיימת סבב! קח הפסקה של 5 דקות.");
+            return 5 * 60;
+          } else {
+            setPomoMode("work");
+            speak("ההפסקה נגמרה. בוא נחזור לעבודה.");
+            showToast("⏰ ההפסקה נגמרה — בחזרה לעבודה!");
+            return 25 * 60;
+          }
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [pomoRunning, pomoMode]);
+
+  const pomoReset = () => { setPomoRunning(false); setPomoMode("work"); setPomoLeft(25 * 60); };
+  const pomoFmt = (s) => String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 
   const openTasks = tasks.filter((t) => t.status !== "done");
   const doneCount = tasks.filter((t) => t.status === "done").length;
@@ -760,6 +795,21 @@ function App() {
             <div><div style={S.eyebrow}>מוזיקה לעבודה</div><h2 style={S.tripH2}>פוקוס</h2></div>
           </div>
           <div style={S.focusHint}>בחר פלייליסט — ייפתח ביוטיוב בלשונית חדשה, ותוכל לעבוד עם מוזיקה ברקע.</div>
+
+          {/* טיימר פומודורו */}
+          <div style={{ ...S.pomoCard, borderColor: pomoMode === "break" ? C.good : C.accent }}>
+            <div style={S.pomoLabel}>{pomoMode === "work" ? "🍅 זמן עבודה" : "☕ זמן הפסקה"}</div>
+            <div style={{ ...S.pomoTime, color: pomoMode === "break" ? C.good : C.accent }}>{pomoFmt(pomoLeft)}</div>
+            <div style={S.pomoBtns}>
+              <button style={S.pomoMain} onClick={() => setPomoRunning((r) => !r)}>
+                {pomoRunning ? "⏸ עצור" : "▶ התחל"}
+              </button>
+              <button style={S.pomoGhost} onClick={pomoReset}>איפוס</button>
+            </div>
+            <div style={S.pomoCount}>סבבים שהושלמו היום: {pomoCount} {pomoCount > 0 ? "🍅".repeat(Math.min(pomoCount, 8)) : ""}</div>
+          </div>
+
+          <div style={S.musicSectionTitle}>מוזיקה ברקע</div>
           <div style={S.musicGrid}>
             {[
               { emoji: "🎧", label: "לופי לעבודה", sub: "Lo-fi beats לריכוז", url: "https://www.youtube.com/results?search_query=lofi+hip+hop+study+work" },
@@ -1055,6 +1105,14 @@ const S = {
   showAllBtn: { background: "transparent", border: "1px dashed " + C.line, color: C.dim, borderRadius: 10, padding: "11px 14px", fontSize: 14, cursor: "pointer", marginTop: 4, width: "100%" },
   chatHint: { fontSize: 14, color: C.dim, marginBottom: 14, lineHeight: 1.5 },
   focusHint: { fontSize: 14, color: C.dim, marginBottom: 18, lineHeight: 1.5 },
+  pomoCard: { background: C.panel, border: "2px solid " + C.accent, borderRadius: 18, padding: "26px 20px", textAlign: "center", marginBottom: 24, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  pomoLabel: { fontSize: 15, fontWeight: 700, color: C.text },
+  pomoTime: { fontSize: 56, fontWeight: 800, fontFamily: "'Frank Ruhl Libre', serif", margin: "8px 0 14px", letterSpacing: 2 },
+  pomoBtns: { display: "flex", gap: 10, justifyContent: "center" },
+  pomoMain: { background: C.accent, color: "#ffffff", border: "none", borderRadius: 12, padding: "12px 28px", fontSize: 16, fontWeight: 700, cursor: "pointer" },
+  pomoGhost: { background: "transparent", color: C.dim, border: "1px solid " + C.line, borderRadius: 12, padding: "12px 20px", fontSize: 14, cursor: "pointer" },
+  pomoCount: { fontSize: 13, color: C.dim, marginTop: 14 },
+  musicSectionTitle: { fontSize: 13, letterSpacing: 1.5, color: C.dim, fontWeight: 700, marginBottom: 12, textTransform: "uppercase" },
   musicGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
   musicCard: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: "18px 16px", textDecoration: "none", display: "flex", flexDirection: "column", gap: 4, boxShadow: "0 1px 3px rgba(20,30,60,0.06)", cursor: "pointer" },
   musicEmoji: { fontSize: 32 },
