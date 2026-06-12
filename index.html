@@ -512,7 +512,7 @@ function App() {
       </div>
 
       <nav style={S.tabs}>
-        {[["home", "בית"], ["chat", "צ׳אט"], ["board", "לוח"], ["trip", "מצב טיול"], ["patterns", "דפוסים"]].map(([k, l]) => (
+        {[["home", "בית"], ["chat", "צ׳אט"], ["board", "לוח"], ["trip", "מצב טיול"], ["focus", "🎧 פוקוס"], ["patterns", "דפוסים"]].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...S.tab, ...(tab === k ? S.tabActive : {}) }}>{l}</button>
         ))}
       </nav>
@@ -751,6 +751,33 @@ function App() {
           </div>
 
           <div style={S.tripNote}>כרגע המעקב והתגובה פנימיים לעוזרת. בשלב הבא נחבר את זה ל<b>אתר ניהול החווה</b> כך שגיא ואליק יראו את הדחיפות שלך, ואתה תראה בזמן אמת מה הם סגרו — גם מהטיול.</div>
+        </section>
+      )}
+
+      {tab === "focus" && (
+        <section style={{ marginTop: 24 }}>
+          <div style={S.tripHead}>
+            <div><div style={S.eyebrow}>מוזיקה לעבודה</div><h2 style={S.tripH2}>פוקוס</h2></div>
+          </div>
+          <div style={S.focusHint}>בחר פלייליסט — ייפתח ביוטיוב בלשונית חדשה, ותוכל לעבוד עם מוזיקה ברקע.</div>
+          <div style={S.musicGrid}>
+            {[
+              { emoji: "🎧", label: "לופי לעבודה", sub: "Lo-fi beats לריכוז", url: "https://www.youtube.com/results?search_query=lofi+hip+hop+study+work" },
+              { emoji: "🌿", label: "צלילי טבע", sub: "יער, ציפורים, רוח", url: "https://www.youtube.com/results?search_query=nature+forest+sounds+relax" },
+              { emoji: "🎹", label: "קלאסי רגוע", sub: "פסנתר ומיתרים", url: "https://www.youtube.com/results?search_query=calm+classical+piano+focus" },
+              { emoji: "🌊", label: "אמביינט עמוק", sub: "צלילים לריכוז עמוק", url: "https://www.youtube.com/results?search_query=ambient+deep+focus+music" },
+              { emoji: "☕", label: "בוקר נעים", sub: "מוזיקה לבוקר עבודה", url: "https://www.youtube.com/results?search_query=morning+coffee+jazz+music" },
+              { emoji: "🔥", label: "אנרגיה לעבודה", sub: "קצב לעבודה פעילה", url: "https://www.youtube.com/results?search_query=upbeat+work+focus+playlist" },
+              { emoji: "💪", label: "מוטיבציה", sub: "מוזיקה מדרבנת לדחיפה", url: "https://www.youtube.com/results?search_query=motivation+music+workout+energy" },
+              { emoji: "🌅", label: "התעוררות", sub: "להתחיל את הבוקר בכוח", url: "https://www.youtube.com/results?search_query=good+morning+wake+up+energy+music" },
+            ].map((m, i) => (
+              <a key={i} href={m.url} target="_blank" rel="noopener noreferrer" style={S.musicCard}>
+                <span style={S.musicEmoji}>{m.emoji}</span>
+                <span style={S.musicLabel}>{m.label}</span>
+                <span style={S.musicSub}>{m.sub}</span>
+              </a>
+            ))}
+          </div>
         </section>
       )}
 
@@ -1027,6 +1054,12 @@ const S = {
   empty: { color: C.dim, textAlign: "center", padding: 30 },
   showAllBtn: { background: "transparent", border: "1px dashed " + C.line, color: C.dim, borderRadius: 10, padding: "11px 14px", fontSize: 14, cursor: "pointer", marginTop: 4, width: "100%" },
   chatHint: { fontSize: 14, color: C.dim, marginBottom: 14, lineHeight: 1.5 },
+  focusHint: { fontSize: 14, color: C.dim, marginBottom: 18, lineHeight: 1.5 },
+  musicGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
+  musicCard: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: "18px 16px", textDecoration: "none", display: "flex", flexDirection: "column", gap: 4, boxShadow: "0 1px 3px rgba(20,30,60,0.06)", cursor: "pointer" },
+  musicEmoji: { fontSize: 32 },
+  musicLabel: { fontSize: 16, fontWeight: 700, color: C.text, marginTop: 4 },
+  musicSub: { fontSize: 13, color: C.dim },
   chatWindow: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 16, minHeight: 280, maxHeight: 460, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 },
   chatEmpty: { color: C.dim, fontSize: 14, textAlign: "center", padding: 30, lineHeight: 1.7 },
   chatBubble: { padding: "12px 16px", borderRadius: 14, fontSize: 15, lineHeight: 1.55, maxWidth: "85%" },
