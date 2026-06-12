@@ -100,6 +100,21 @@ const C = {
   good: "#00c875", warn: "#fdab3d", danger: "#e2445c",
 };
 
+// נושאים — כל אחד עם צבע ואמוג'י משלו
+const TOPICS = {
+  farm: { label: "חווה", emoji: "🌾", color: "#00c875" },
+  judaica: { label: "יודאיקה", emoji: "🏺", color: "#a358df" },
+  sport: { label: "ספורט", emoji: "🏃", color: "#fdab3d" },
+  flute: { label: "חליל", emoji: "🎵", color: "#5b6ef5" },
+  couple: { label: "זוגיות", emoji: "❤️", color: "#e2445c" },
+  general: { label: "כללי", emoji: "➕", color: "#7a8499" },
+};
+const topicOf = (t) => TOPICS[t] || TOPICS.general;
+
+// תדירויות משימה קבועה
+const REPEATS = { once: "חד-פעמית", daily: "🔁 יומי", weekly: "🔁 שבועי", monthly: "🔁 חודשי" };
+const repeatLabel = (r) => REPEATS[r] || REPEATS.once;
+
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const fmtHe = (d) => new Date(d).toLocaleDateString("he-IL", { day: "numeric", month: "numeric" });
 const daysUntil = (d) => Math.ceil((new Date(d + "T23:59:59") - new Date()) / 86400000);
@@ -172,6 +187,9 @@ function App() {
   const [breakingId, setBreakingId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [newTask, setNewTask] = useState("");
+  const [newTopic, setNewTopic] = useState("general");
+  const [newRepeat, setNewRepeat] = useState("once");
+  const [topicFilter, setTopicFilter] = useState("all");
   const [toast, setToast] = useState(null);
   const [voiceOn, setVoiceOn] = useState(true);
   const [spoke, setSpoke] = useState(false);
@@ -277,7 +295,8 @@ function App() {
   const sortedOpen = openTasks.slice().sort((a, b) => (a.due || "9").localeCompare(b.due || "9"));
   const todayTasks = sortedOpen.filter((t) => t.due && daysUntil(t.due) <= 2);
   const laterTasks = sortedOpen.filter((t) => !(t.due && daysUntil(t.due) <= 2));
-  const homeTasks = showAllTasks ? sortedOpen : todayTasks;
+  const homeTasksRaw = showAllTasks ? sortedOpen : todayTasks;
+  const homeTasks = topicFilter === "all" ? homeTasksRaw : homeTasksRaw.filter((t) => (t.topic || "general") === topicFilter);
 
   /* ----- קול ----- */
   const speak = (text) => {
@@ -323,7 +342,7 @@ function App() {
   const toggleHabit = (id) => setHabitLog((p) => { const d = { ...(p[tk] || {}) }; d[id] = !d[id]; return { ...p, [tk]: d }; });
   const addTask = () => {
     const v = newTask.trim(); if (!v) return;
-    setTasks((p) => [...p, { id: "u" + Date.now(), title: v, due: "", cat: "כללי", prio: "med", status: "todo", owner: "בני", steps: [], feedback: [] }]);
+    setTasks((p) => [...p, { id: "u" + Date.now(), title: v, due: "", cat: "כללי", topic: newTopic, repeat: newRepeat, prio: "med", status: "todo", owner: "בני", steps: [], feedback: [] }]);
     setNewTask(""); showToast("נוסף. תפרק אותו אם הוא גדול.");
   };
   const checkIn = () => { if (!focus.trim()) return; setCheckedInDay(tk); showToast("מצוין. עכשיו הצעד הראשון."); };
@@ -454,6 +473,8 @@ function App() {
       prio: editTask.prio,
       owner: editTask.owner,
       cat: editTask.cat,
+      topic: editTask.topic || "general",
+      repeat: editTask.repeat || "once",
     } : t));
     setEditTask(null);
     showToast("המשימה עודכנה.");
@@ -591,14 +612,42 @@ function App() {
                   placeholder="הוסף משימה…" onKeyDown={(e) => e.key === "Enter" && addTask()} />
                 <button style={S.btnAccent} onClick={addTask}>+</button>
               </div>
+              <div style={S.topicPickRow}>
+                {Object.entries(TOPICS).map(([k, t]) => (
+                  <button key={k} onClick={() => setNewTopic(k)}
+                    style={{ ...S.topicPick, ...(newTopic === k ? { background: t.color, color: "#fff", borderColor: t.color } : { color: t.color, borderColor: t.color }) }}>
+                    {t.emoji} {t.label}
+                  </button>
+                ))}
+              </div>
+              <div style={S.topicPickRow}>
+                {Object.entries(REPEATS).map(([k, l]) => (
+                  <button key={k} onClick={() => setNewRepeat(k)}
+                    style={{ ...S.topicPick, ...(newRepeat === k ? { background: C.accent, color: "#fff", borderColor: C.accent } : { color: C.dim }) }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <div style={S.filterRow}>
+                <button onClick={() => setTopicFilter("all")}
+                  style={{ ...S.filterChip, ...(topicFilter === "all" ? { background: C.text, color: "#fff", borderColor: C.text } : {}) }}>הכל</button>
+                {Object.entries(TOPICS).map(([k, t]) => (
+                  <button key={k} onClick={() => setTopicFilter(k)}
+                    style={{ ...S.filterChip, ...(topicFilter === k ? { background: t.color, color: "#fff", borderColor: t.color } : { color: t.color, borderColor: t.color }) }}>
+                    {t.emoji} {t.label}
+                  </button>
+                ))}
+              </div>
               <div style={S.taskList}>
                 {homeTasks.map((t) => (
-                  <div key={t.id} style={S.taskCard}>
+                  <div key={t.id} style={{ ...S.taskCard, borderRight: "4px solid " + topicOf(t.topic).color }}>
                     <div style={S.taskHead}>
                       <button style={S.check} onClick={() => setStatus(t.id, "done")} aria-label="בוצע" />
                       <div style={{ flex: 1 }}>
                         <div style={S.taskTitle}>{t.title}</div>
                         <div style={S.taskMeta}>
+                          <span style={{ ...S.pill, borderColor: topicOf(t.topic).color, color: topicOf(t.topic).color }}>{topicOf(t.topic).emoji} {topicOf(t.topic).label}</span>
+                          {t.repeat && t.repeat !== "once" && <span style={{ ...S.pill, borderColor: C.accent, color: C.accent }}>{repeatLabel(t.repeat)}</span>}
                           <span style={{ ...S.pill, borderColor: prioColor(t.prio), color: prioColor(t.prio) }}>{t.cat}</span>
                           <span style={{ ...S.pill, borderColor: STATUS[t.status].color, color: STATUS[t.status].color }}>{STATUS[t.status].label}</span>
                           {t.due && <span style={S.dimSmall}>{daysUntil(t.due) <= 0 ? "להיום" : "עוד " + daysUntil(t.due) + " י׳ · " + fmtHe(t.due)}</span>}
@@ -943,6 +992,24 @@ function App() {
               ))}
             </div>
 
+            <label style={S.editLabel}>נושא</label>
+            <div style={S.editChips}>
+              {Object.entries(TOPICS).map(([k, t]) => (
+                <button key={k} onClick={() => setEditTask({ ...editTask, topic: k })}
+                  style={{ ...S.editChip, ...((editTask.topic || "general") === k ? { background: t.color, color: "#fff", borderColor: t.color } : { color: t.color, borderColor: t.color }) }}>
+                  {t.emoji} {t.label}
+                </button>
+              ))}
+            </div>
+
+            <label style={S.editLabel}>תדירות</label>
+            <div style={S.editChips}>
+              {Object.entries(REPEATS).map(([k, l]) => (
+                <button key={k} onClick={() => setEditTask({ ...editTask, repeat: k })}
+                  style={{ ...S.editChip, ...((editTask.repeat || "once") === k ? { background: C.accent, color: "#fff", borderColor: C.accent } : {}) }}>{l}</button>
+              ))}
+            </div>
+
             <label style={S.editLabel}>קטגוריה</label>
             <input style={S.editInput} value={editTask.cat || ""}
               onChange={(e) => setEditTask({ ...editTask, cat: e.target.value })} placeholder="טיסה / פרויקט / כללי…" />
@@ -1035,7 +1102,11 @@ const S = {
   nextCard: { background: "linear-gradient(135deg, " + C.panel2 + ", " + C.panel + ")", border: "1px solid " + C.accent, borderRadius: 14, padding: 16, marginBottom: 16, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
   nextTitle: { fontSize: 19, fontWeight: 700, marginTop: 4 },
   nextMeta: { marginTop: 8, fontSize: 13 },
-  addRow: { display: "flex", gap: 8, marginBottom: 14 },
+  addRow: { display: "flex", gap: 8, marginBottom: 10 },
+  topicPickRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 },
+  topicPick: { background: "transparent", border: "1px solid " + C.line, borderRadius: 18, padding: "5px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  filterRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid " + C.line },
+  filterChip: { background: "transparent", border: "1px solid " + C.line, color: C.dim, borderRadius: 18, padding: "6px 13px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   addInput: { flex: 1, background: C.panel, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "11px 13px", outline: "none" },
   taskList: { display: "flex", flexDirection: "column", gap: 12 },
   taskCard: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: 14, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
