@@ -46,6 +46,17 @@
     messagingSenderId: "31497777067",
     appId: "1:31497777067:web:7edb4c1628d7e3919c2cee"
   };
+  // 🔻 חיבור נפרד לאפליקציית החווה (שירת האדמה) — לשליחת משימות בלבד 🔻
+  window.FARM_CONFIG = {
+    apiKey: "AIzaSyCCqudMDZU7voUmGEmXT0iUFIMexnSqrgI",
+    authDomain: "shirat-haadama.firebaseapp.com",
+    projectId: "shirat-haadama",
+    storageBucket: "shirat-haadama.firebasestorage.app",
+    messagingSenderId: "564770382394",
+    appId: "1:564770382394:web:74692bab93e4eea1a2cb03"
+  };
+  // ה-uid שלך באפליקציית החווה
+  window.FARM_MY_UID = "u1778261573535";
 </script>
 
 <script type="text/babel" data-presets="react">
@@ -60,6 +71,18 @@ try {
     firebaseReady = true;
   }
 } catch (e) { console.warn("Firebase init failed:", e); }
+
+/* ---------- חיבור נפרד לחווה (שירת האדמה) — אפליקציה נפרדת בשם farm ---------- */
+let farmDb = null, farmReady = false;
+try {
+  if (window.FARM_CONFIG) {
+    const farmApp = firebase.initializeApp(window.FARM_CONFIG, "farm");
+    farmDb = farmApp.firestore();
+    farmReady = true;
+  }
+} catch (e) { console.warn("Farm Firebase init failed:", e); }
+
+const FARM_DOC = () => farmDb.collection("shirat").doc("main");
 
 const DOC_REF = () => db.collection("ozeret").doc("main");
 
@@ -405,6 +428,60 @@ function App() {
     setTasks((p) => p.filter((t) => t.id !== editTask.id));
     setEditTask(null);
     showToast("המשימה נמחקה.");
+  };
+
+  // ----- שליחה לאפליקציית החווה (כיוון אחד, בלחיצה) -----
+  const [farmSending, setFarmSending] = useState(false);
+  // תרגום דחיפות: אישי -> חווה
+  const prioToFarm = { high: "high", med: "medium", low: "low" };
+  // אזורי החווה (כל הקטגוריות)
+  const FARM_AREAS = [
+    ["animals", "🐓 בעלי חיים"],
+    ["forest", "🌲 יער"],
+    ["nursery", "🌱 משתלה"],
+    ["field", "🌾 שדה"],
+    ["maint", "🔧 תחזוקה"],
+    ["marketing", "📢 שיווק"],
+    ["admin", "📋 ניהול"],
+  ];
+
+  const sendToFarm = async () => {
+    if (!editTask) return;
+    if (!farmReady) { showToast("החיבור לחווה לא זמין כרגע."); return; }
+    if (farmSending) return;
+    setFarmSending(true);
+    try {
+      const snap = await FARM_DOC().get();
+      if (!snap.exists) { showToast("לא נמצא מסמך החווה."); setFarmSending(false); return; }
+      const data = snap.data();
+      const oT = Array.isArray(data.oT) ? data.oT.slice() : Object.values(data.oT || {});
+      // בניית משימה בפורמט החווה המדויק
+      const farmTask = {
+        id: "ozeret-" + Date.now(),
+        title: editTask.title.trim(),
+        area: editTask.farmArea || "animals",
+        pri: prioToFarm[editTask.prio] || "medium",
+        uid: editTask.farmUid || window.FARM_MY_UID,
+        scheduledDate: editTask.due || "",
+        scheduledTime: editTask.farmTime || "",
+        due: editTask.due || "",
+        done: false,
+        doneAt: null,
+        createdBy: window.FARM_MY_UID,
+      };
+      oT.push(farmTask);
+      // כתיבה של מערך oT בלבד — בלי לגעת בשום שדה אחר
+      await FARM_DOC().update({ oT });
+      // סימון מקומי שהמשימה נשלחה
+      setTasks((p) => p.map((t) => t.id === editTask.id ? { ...t, sentToFarm: true } : t));
+      setEditTask(null);
+      showToast("✓ נשלחה לחווה — גיא ואליק יראו אותה.");
+    } catch (e) {
+      console.error("sendToFarm error:", e);
+      showToast("שגיאה בשליחה לחווה. נסה שוב.");
+    } finally {
+      setFarmSending(false);
+    }
   };
 
   const prioColor = (p) => (p === "high" ? C.danger : p === "med" ? C.warn : C.dim);
@@ -793,6 +870,39 @@ function App() {
             <input style={S.editInput} value={editTask.cat || ""}
               onChange={(e) => setEditTask({ ...editTask, cat: e.target.value })} placeholder="טיסה / פרויקט / כללי…" />
 
+            {/* ----- משימת חווה ----- */}
+            {farmReady && (
+              <div style={S.farmBox}>
+                <label style={S.farmCheck}>
+                  <input type="checkbox" checked={!!editTask.isFarm}
+                    onChange={(e) => setEditTask({ ...editTask, isFarm: e.target.checked })} />
+                  <span>🌾 משימת חווה — לשלוח לניהול החווה</span>
+                </label>
+
+                {editTask.isFarm && (
+                  <div style={{ marginTop: 12 }}>
+                    <label style={S.editLabel}>אזור בחווה</label>
+                    <div style={S.editChips}>
+                      {FARM_AREAS.map(([v, l]) => (
+                        <button key={v} onClick={() => setEditTask({ ...editTask, farmArea: v })}
+                          style={{ ...S.editChip, ...(editTask.farmArea === v ? { background: C.accent2, color: "#1d1206", borderColor: C.accent2 } : {}) }}>{l}</button>
+                      ))}
+                    </div>
+
+                    <label style={S.editLabel}>שעה (אופציונלי)</label>
+                    <input type="time" style={S.editInput} value={editTask.farmTime || ""}
+                      onChange={(e) => setEditTask({ ...editTask, farmTime: e.target.value })} />
+
+                    <button style={{ ...S.btnAccent, width: "100%", marginTop: 14, opacity: farmSending ? 0.6 : 1 }}
+                      disabled={farmSending} onClick={sendToFarm}>
+                      {farmSending ? "שולח…" : "🌾 שלח לחווה"}
+                    </button>
+                    {editTask.sentToFarm && <div style={S.farmSent}>✓ כבר נשלחה לחווה</div>}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ ...S.modalBtns, marginTop: 20 }}>
               <button style={S.btnAccent} onClick={saveEdit}>שמור</button>
               <button style={S.btnGhost} onClick={closeEdit}>ביטול</button>
@@ -866,6 +976,9 @@ const S = {
   editChips: { display: "flex", gap: 8, flexWrap: "wrap" },
   editChip: { background: "transparent", border: "1px solid " + C.line, color: C.text, borderRadius: 20, padding: "7px 14px", fontSize: 14, cursor: "pointer" },
   deleteBtn: { background: "transparent", border: "1px solid " + C.danger, color: C.danger, borderRadius: 9, padding: "10px 14px", cursor: "pointer", fontSize: 13, marginRight: "auto" },
+  farmBox: { marginTop: 18, padding: 14, background: "rgba(106,154,90,.08)", border: "1px solid rgba(106,154,90,.3)", borderRadius: 12 },
+  farmCheck: { display: "flex", alignItems: "center", gap: 9, fontSize: 14, fontWeight: 600, color: C.text, cursor: "pointer" },
+  farmSent: { marginTop: 8, fontSize: 13, color: C.good, fontWeight: 600, textAlign: "center" },
   steps: { marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 8 },
   stepRow: { display: "flex", gap: 10, alignItems: "center", background: "transparent", border: "none", cursor: "pointer", padding: 0, textAlign: "right" },
   stepDot: { width: 16, height: 16, borderRadius: "50%", border: "2px solid", flexShrink: 0 },
