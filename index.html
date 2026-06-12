@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>העוזרת</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#1d2419" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700;800&family=Frank+Ruhl+Libre:wght@500;700;900&display=swap" rel="stylesheet" />
+
+<!-- React + Babel (CDN) -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<!-- Firebase (compat — קל יותר לקובץ יחיד) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #1d2419; overflow-x: hidden; }
+  body { font-family: 'Heebo', system-ui, sans-serif; }
+  input, textarea, button { font-family: inherit; font-size: 16px; } /* 16px מונע זום באייפון */
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #c97b40; outline-offset: 2px; }
+  @media (max-width: 760px) {
+    .grid { grid-template-columns: 1fr !important; }
+    .board { grid-template-columns: 1fr !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- ============================================================
+     הגדרות Firebase — החלף בערכים שלך מהקונסולה (ראה מדריך)
+     ============================================================ -->
+<script>
+  // 🔻 הדבק כאן את firebaseConfig מהפרויקט החדש שלך 🔻
+  window.FIREBASE_CONFIG = {
+    apiKey: "AIzaSyD_TR5IAnA9XFtFDUCy2Lws6A8-FuWYuyk",
+    authDomain: "ozeret-benny.firebaseapp.com",
+    projectId: "ozeret-benny",
+    storageBucket: "ozeret-benny.firebasestorage.app",
+    messagingSenderId: "31497777067",
+    appId: "1:31497777067:web:7edb4c1628d7e3919c2cee"
+  };
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+/* ---------- אתחול Firebase ---------- */
+let db = null, firebaseReady = false;
+try {
+  if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId !== "PASTE_PROJECT") {
+    firebase.initializeApp(window.FIREBASE_CONFIG);
+    db = firebase.firestore();
+    firebaseReady = true;
+  }
+} catch (e) { console.warn("Firebase init failed:", e); }
+
+const DOC_REF = () => db.collection("ozeret").doc("main");
+
+// Firestore שומר מערכים לפעמים כאובייקט — נרמול חזרה למערך
+function bonusArr(v) {
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === "object") return Object.keys(v).sort().map((k) => v[k]);
+  return [];
+}
+
+/* ---------- צבעים ---------- */
+const C = {
+  bg: "#1d2419", panel: "#262e20", panel2: "#2f3829", line: "#3d4733",
+  text: "#eae6d8", dim: "#a3a08f", accent: "#c97b40", accent2: "#7a8b4f",
+  good: "#8aa05a", warn: "#d4904a", danger: "#c4634a",
+};
+
+const todayKey = () => new Date().toISOString().slice(0, 10);
+const fmtHe = (d) => new Date(d).toLocaleDateString("he-IL", { day: "numeric", month: "numeric" });
+const daysUntil = (d) => Math.ceil((new Date(d + "T23:59:59") - new Date()) / 86400000);
+
+const STATUS = {
+  todo:  { label: "לעשות",  color: C.dim },
+  doing: { label: "בתהליך", color: C.warn },
+  done:  { label: "בוצע",   color: C.good },
+};
+const STATUS_ORDER = ["todo", "doing", "done"];
+
+const SEED_TASKS = [
+  { id: "t1", title: "למדוד חלונות ולהזמין מיד", due: "2026-06-13", cat: "טיסה", prio: "high", status: "todo", owner: "בני", steps: [], feedback: [] },
+  { id: "t2", title: "לסגור פתחים במבנה", due: "2026-06-18", cat: "טיסה", prio: "high", status: "todo", owner: "צוות", steps: [], feedback: [] },
+  { id: "t3", title: "ליישר רצפה", due: "2026-06-18", cat: "טיסה", prio: "high", status: "todo", owner: "צוות", steps: [], feedback: [] },
+  { id: "t4", title: "לצבוע את המבנה", due: "2026-06-25", cat: "טיסה", prio: "med", status: "todo", owner: "צוות", steps: [], feedback: [] },
+  { id: "t5", title: "להתחיל שירותי קומפוסט ומקלחת", due: "2026-06-25", cat: "טיסה", prio: "med", status: "todo", owner: "בני", steps: [], feedback: [] },
+  { id: "t6", title: "לסיים שירותים ומקלחת", due: "2026-07-02", cat: "טיסה", prio: "med", status: "todo", owner: "בני", steps: [], feedback: [] },
+  { id: "t7", title: "לנקות את המבנה", due: "2026-07-02", cat: "טיסה", prio: "med", status: "todo", owner: "הזוג", steps: [], feedback: [] },
+  { id: "t8", title: "לסדר בחוץ", due: "2026-07-09", cat: "טיסה", prio: "med", status: "todo", owner: "הזוג", steps: [], feedback: [] },
+  { id: "t9", title: "לסגור את היער", due: "2026-07-09", cat: "טיסה", prio: "med", status: "todo", owner: "בני", steps: [], feedback: [] },
+];
+const SEED_HABITS = [
+  { id: "h1", title: "לקום ולצאת לאוויר", emoji: "☀️", note: "6:45 — אור בוקר, אספרסו בחוץ" },
+  { id: "h2", title: "רבע שעה אימון מקל", emoji: "🥢", note: "15 דק׳ תנועה" },
+  { id: "h3", title: "אימון חליל אירי", emoji: "🎵", note: "מחכה 3 שבועות — מתחילים!" },
+];
+const GREETINGS = [
+  "בוקר טוב בני. מה במוקד היום?",
+  "יאללה בני, יום חדש. על מה אתה הכי רוצה לסגור היום?",
+  "בוקר. בלי לחשוב יותר מדי — מה הדבר האחד שחייב לקרות היום?",
+];
+const PRAISE = [
+  "יפה מאוד. סימנת משימה — זה בדיוק המהלך.",
+  "כל הכבוד בני. עוד אחת ירדה.",
+  "זהו, ככה זה נראה. ממשיכים.",
+];
+
+/* ---------- קריאה ל-AI (דורשת מפתח של בני) ----------
+   מחוץ לסביבת Claude צריך מפתח Anthropic. נשמר מקומית בדפדפן.
+   אם אין מפתח — הפיצ'רים האלה מציגים הודעה מנומסת. */
+async function callAI(prompt, apiKey) {
+  if (!apiKey) throw new Error("no-key");
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  const data = await res.json();
+  return data.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+}
+
+function App() {
+  const [loaded, setLoaded] = useState(false);
+  const [tab, setTab] = useState("home");
+  const [tasks, setTasks] = useState(SEED_TASKS);
+  const [habits] = useState(SEED_HABITS);
+  const [habitLog, setHabitLog] = useState({});
+  const [focus, setFocus] = useState("");
+  const [checkedInDay, setCheckedInDay] = useState(null);
+  const [breakingId, setBreakingId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [newTask, setNewTask] = useState("");
+  const [toast, setToast] = useState(null);
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [spoke, setSpoke] = useState(false);
+  const [fbTask, setFbTask] = useState(null);
+  const [fbText, setFbText] = useState("");
+  const [fbReply, setFbReply] = useState(null);
+  const [fbBusy, setFbBusy] = useState(false);
+  const [patterns, setPatterns] = useState(null);
+  const [patBusy, setPatBusy] = useState(false);
+  const [lastAnalyzedAt, setLastAnalyzedAt] = useState(0);
+  const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+
+  const tk = todayKey();
+  const greeting = useMemo(() => GREETINGS[new Date().getDate() % GREETINGS.length], []);
+  const showToast = (m) => { setToast(m); setTimeout(() => setToast(null), 2800); };
+
+  /* ----- טעינה ראשונית מ-Firebase ----- */
+  useEffect(() => {
+    const savedKey = (window.sessionStorage && sessionStorage.getItem("anthKey")) || "";
+    if (savedKey) setApiKey(savedKey);
+    if (!firebaseReady) { setLoaded(true); return; }
+    DOC_REF().get().then((snap) => {
+      if (snap.exists) {
+        const d = snap.data();
+        if (d.tasks) setTasks(bonusArr(d.tasks).map((t) => ({ ...t, steps: bonusArr(t.steps), feedback: bonusArr(t.feedback) })));
+        if (d.habitLog) setHabitLog(d.habitLog);
+        if (d.focus && d.focusDay === tk) { setFocus(d.focus); setCheckedInDay(tk); }
+        if (typeof d.lastAnalyzedAt === "number") setLastAnalyzedAt(d.lastAnalyzedAt);
+        if (d.patterns) setPatterns(d.patterns);
+      }
+      setLoaded(true);
+    }).catch((e) => { console.warn(e); setLoaded(true); });
+  }, []);
+
+  /* ----- שמירה ל-Firebase בכל שינוי ----- */
+  useEffect(() => {
+    if (!loaded || !firebaseReady) return;
+    const payload = {
+      tasks, habitLog,
+      focus: checkedInDay === tk ? focus : "",
+      focusDay: checkedInDay === tk ? tk : "",
+      lastAnalyzedAt, patterns: patterns || null,
+      updatedAt: new Date().toISOString(),
+    };
+    DOC_REF().set(payload, { merge: true }).catch((e) => console.warn("save failed", e));
+  }, [tasks, habitLog, focus, checkedInDay, patterns, lastAnalyzedAt, loaded]);
+
+  const saveKey = (v) => {
+    setApiKey(v);
+    try { if (window.sessionStorage) sessionStorage.setItem("anthKey", v); } catch (e) {}
+  };
+
+  const openTasks = tasks.filter((t) => t.status !== "done");
+  const doneCount = tasks.filter((t) => t.status === "done").length;
+  const pct = Math.round((doneCount / tasks.length) * 100);
+  const flightOpen = openTasks.filter((t) => t.cat === "טיסה");
+  const nextTask = [...flightOpen].sort((a, b) => (a.due || "9").localeCompare(b.due || "9"))[0];
+  const todayHabits = habitLog[tk] || {};
+  const habitsDone = habits.filter((h) => todayHabits[h.id]).length;
+
+  /* ----- קול ----- */
+  const speak = (text) => {
+    if (!("speechSynthesis" in window)) { showToast("הקול לא נתמך בדפדפן הזה"); return; }
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "he-IL"; u.rate = 1; u.pitch = 1;
+    const v = window.speechSynthesis.getVoices().find((x) => x.lang && x.lang.toLowerCase().startsWith("he"));
+    if (v) u.voice = v;
+    window.speechSynthesis.speak(u);
+  };
+  const stopSpeak = () => { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); };
+
+  const summaryText = useMemo(() => {
+    const urgent = tasks.filter((t) => t.status !== "done" && t.due && daysUntil(t.due) <= 2);
+    const p = ["בוקר טוב בני."];
+    if (checkedInDay === tk && focus.trim()) p.push("המוקד שלך להיום: " + focus + ".");
+    p.push("יש לך " + openTasks.length + " משימות פתוחות, השלמת " + doneCount + ", אתה ב-" + pct + " אחוז.");
+    p.push(urgent.length ? "דורש תשומת לב: " + urgent.map((t) => t.title).join(", ") + "." : "שום דבר לא בוער כרגע.");
+    if (nextTask) p.push("הבא בתור: " + nextTask.title + ".");
+    p.push("הרגלים היום: השלמת " + habitsDone + " מתוך " + habits.length + ".");
+    p.push("יאללה, צעד אחד קדימה.");
+    return p.join(" ");
+  }, [tasks, focus, checkedInDay, tk, openTasks.length, doneCount, pct, nextTask, habitsDone, habits.length]);
+
+  useEffect(() => {
+    if (!voiceOn || spoke || !loaded) return;
+    const id = setTimeout(() => {
+      if ("speechSynthesis" in window && window.speechSynthesis.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => speak(summaryText);
+      } else speak(summaryText);
+      setSpoke(true);
+    }, 800);
+    return () => clearTimeout(id);
+  }, [loaded]);
+
+  /* ----- פעולות משימה ----- */
+  const setStatus = (id, status) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
+    if (status === "done") showToast(PRAISE[Math.floor(Math.random() * PRAISE.length)]);
+  };
+  const advance = (t) => { const i = STATUS_ORDER.indexOf(t.status); setStatus(t.id, STATUS_ORDER[Math.min(i + 1, 2)]); };
+  const toggleHabit = (id) => setHabitLog((p) => { const d = { ...(p[tk] || {}) }; d[id] = !d[id]; return { ...p, [tk]: d }; });
+  const addTask = () => {
+    const v = newTask.trim(); if (!v) return;
+    setTasks((p) => [...p, { id: "u" + Date.now(), title: v, due: "", cat: "כללי", prio: "med", status: "todo", owner: "בני", steps: [], feedback: [] }]);
+    setNewTask(""); showToast("נוסף. תפרק אותו אם הוא גדול.");
+  };
+  const checkIn = () => { if (!focus.trim()) return; setCheckedInDay(tk); showToast("מצוין. עכשיו הצעד הראשון."); };
+
+  const breakDown = async (task) => {
+    setBreakingId(task.id); setBusy(true);
+    try {
+      const text = await callAI(
+        'אתה עוזר אישי ישיר ומדרבן של בני, מנהל חווה חינוכית בישראל.\n' +
+        'פרק את המשימה ל-3 עד 5 צעדים קטנים וקונקרטיים בעברית, כל צעד מתחיל בפועל בציווי, קצר.\n' +
+        'החזר JSON בלבד: {"steps":["...","..."]}\nמשימה: "' + task.title + '"', apiKey);
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const steps = (parsed.steps || []).map((s, i) => ({ id: task.id + "-s" + i, text: s, done: false }));
+      setTasks((p) => p.map((t) => (t.id === task.id ? { ...t, steps } : t)));
+    } catch (e) {
+      showToast(e.message === "no-key" ? "צריך מפתח AI — פתח 'חיבור AI' למטה" : "לא הצלחתי לפרק כרגע.");
+    } finally { setBusy(false); setBreakingId(null); }
+  };
+  const toggleStep = (taskId, stepId) =>
+    setTasks((p) => p.map((t) => t.id === taskId ? { ...t, steps: t.steps.map((s) => s.id === stepId ? { ...s, done: !s.done } : s) } : t));
+
+  /* ----- משוב ----- */
+  const openFeedback = (task) => { setFbTask(task); setFbText(""); setFbReply(null); };
+  const closeFeedback = () => { setFbTask(null); setFbText(""); setFbReply(null); };
+  const sendFeedback = async () => {
+    if (!fbText.trim() || !fbTask) return;
+    setFbBusy(true); setFbReply(null);
+    const history = bonusArr(fbTask.feedback);
+    const histText = history.length ? "היסטוריה: " + history.map((h) => "(" + h.date + ") " + h.note).join(" | ") : "אין היסטוריה קודמת.";
+    try {
+      const text = await callAI(
+        'אתה עוזר אישי של בני, מנהל חווה חינוכית בישראל. אתה ישיר ומדרבן.\n' +
+        'בני סיים משימה ורוצה משוב. תן משוב שמשלב: 1. עידוד אמיתי (לא מתחנף). 2. ניתוח קונקרטי — מה לא עבד, למה, ואיך לשפר (צעד מעשי).\n' +
+        'קצר, בעברית, גוף שני, 3-5 משפטים, בלי כותרות.\n' +
+        'המשימה: "' + fbTask.title + '"\nמה בני כתב: "' + fbText + '"\n' + histText, apiKey);
+      setFbReply(text);
+      const entry = { date: todayKey(), note: fbText.trim(), reply: text };
+      setTasks((p) => p.map((t) => t.id === fbTask.id ? { ...t, feedback: [...bonusArr(t.feedback), entry] } : t));
+    } catch (e) {
+      setFbReply(e.message === "no-key" ? "צריך מפתח AI כדי לקבל משוב. פתח 'חיבור AI' בתחתית המסך." : "לא הצלחתי כרגע. נסה שוב.");
+    } finally { setFbBusy(false); }
+  };
+
+  /* ----- ניתוח דפוסים ----- */
+  const allFeedback = useMemo(() => {
+    const arr = [];
+    tasks.forEach((t) => bonusArr(t.feedback).forEach((f) => arr.push({ task: t.title, cat: t.cat, ...f })));
+    return arr;
+  }, [tasks]);
+
+  const analyzePatterns = async (count) => {
+    setPatBusy(true);
+    try {
+      const list = allFeedback.map((f) => 'משימה: "' + f.task + '" (סוג: ' + f.cat + ') | בני כתב: "' + f.note + '"').join("\n");
+      const text = await callAI(
+        'אתה עוזר אישי של בני, מנהל חווה חינוכית. ישיר, חם ומדרבן.\n' +
+        'נתח את הדפוסים החוזרים במשובים. החזר JSON בלבד (עברית, גוף שני):\n' +
+        '{"byType":"דפוסים לפי סוג משימה","rootCause":"הסיבה העיקרית לתקיעות","oneChange":"השינוי האחד הכי משפיע","trend":"התקדמות לאורך זמן"}\n' +
+        'אם אין מספיק נתונים, כתוב בכנות שצריך עוד משובים.\n\nהמשובים:\n' + list, apiKey);
+      setPatterns(JSON.parse(text.replace(/```json|```/g, "").trim()));
+      setLastAnalyzedAt(count);
+    } catch (e) {
+      setPatterns({ error: e.message === "no-key" ? "צריך מפתח AI לניתוח. פתח 'חיבור AI' בתחתית." : "לא הצלחתי לנתח כרגע." });
+    } finally { setPatBusy(false); }
+  };
+
+  useEffect(() => {
+    const n = allFeedback.length;
+    if (loaded && n >= 3 && n - lastAnalyzedAt >= 3 && !patBusy && apiKey) analyzePatterns(n);
+  }, [allFeedback.length]);
+
+  const prioColor = (p) => (p === "high" ? C.danger : p === "med" ? C.warn : C.dim);
+
+  if (!loaded) return <div style={{ ...S.root, textAlign: "center", paddingTop: 80, color: C.dim }}>טוען…</div>;
+
+  return (
+    <div dir="rtl" style={S.root}>
+      <header style={S.header}>
+        <div>
+          <div style={S.eyebrow}>העוזרת {firebaseReady ? "· מחוברת" : "· מקומית"}</div>
+          <h1 style={S.h1}>שלום בני</h1>
+        </div>
+        <div style={S.statRow}>
+          <Stat label="פתוחות" value={openTasks.length} />
+          <Stat label="הושלמו" value={doneCount} accent />
+          <Stat label="התקדמות" value={pct + "%"} />
+        </div>
+      </header>
+
+      <div style={S.voiceBar}>
+        <button style={S.voiceBtn} onClick={() => speak(summaryText)}>🔊 דבר אליי</button>
+        <button style={S.voiceGhost} onClick={stopSpeak}>השתק</button>
+        <label style={S.voiceToggle}>
+          <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
+          <span>הקראה אוטומטית בכניסה</span>
+        </label>
+      </div>
+
+      <nav style={S.tabs}>
+        {[["home", "בית"], ["board", "לוח"], ["trip", "מצב טיול"], ["patterns", "דפוסים"]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ ...S.tab, ...(tab === k ? S.tabActive : {}) }}>{l}</button>
+        ))}
+      </nav>
+
+      {tab === "home" && (
+        <React.Fragment>
+          {checkedInDay !== tk ? (
+            <section style={S.checkin}>
+              <div style={S.greeting}>{greeting}</div>
+              <div style={S.checkinRow}>
+                <input style={S.focusInput} value={focus} onChange={(e) => setFocus(e.target.value)}
+                  placeholder="הדבר האחד שחייב לקרות היום…" onKeyDown={(e) => e.key === "Enter" && checkIn()} />
+                <button style={S.btnAccent} onClick={checkIn}>נעל מוקד</button>
+              </div>
+            </section>
+          ) : (
+            <section style={S.focusLocked}>
+              <div><div style={S.dimSmall}>המוקד שלך להיום</div><div style={S.focusText}>{focus}</div></div>
+              <button style={S.btnGhost} onClick={() => setCheckedInDay(null)}>שנה</button>
+            </section>
+          )}
+
+          <div style={S.grid} className="grid">
+            <div>
+              <SectionTitle>המשימות שלך</SectionTitle>
+              {nextTask && (
+                <div style={S.nextCard}>
+                  <div style={S.dimSmall}>הבא בתור · הכי דחוף</div>
+                  <div style={S.nextTitle}>{nextTask.title}</div>
+                  <div style={S.nextMeta}>
+                    {nextTask.due && (
+                      <span style={{ color: daysUntil(nextTask.due) <= 2 ? C.danger : C.dim }}>
+                        {daysUntil(nextTask.due) <= 0 ? "להיום!" : "עוד " + daysUntil(nextTask.due) + " ימים · " + fmtHe(nextTask.due)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div style={S.addRow}>
+                <input style={S.addInput} value={newTask} onChange={(e) => setNewTask(e.target.value)}
+                  placeholder="הוסף משימה…" onKeyDown={(e) => e.key === "Enter" && addTask()} />
+                <button style={S.btnAccent} onClick={addTask}>+</button>
+              </div>
+              <div style={S.taskList}>
+                {openTasks.slice().sort((a, b) => (a.due || "9").localeCompare(b.due || "9")).map((t) => (
+                  <div key={t.id} style={S.taskCard}>
+                    <div style={S.taskHead}>
+                      <button style={S.check} onClick={() => setStatus(t.id, "done")} aria-label="בוצע" />
+                      <div style={{ flex: 1 }}>
+                        <div style={S.taskTitle}>{t.title}</div>
+                        <div style={S.taskMeta}>
+                          <span style={{ ...S.pill, borderColor: prioColor(t.prio), color: prioColor(t.prio) }}>{t.cat}</span>
+                          <span style={{ ...S.pill, borderColor: STATUS[t.status].color, color: STATUS[t.status].color }}>{STATUS[t.status].label}</span>
+                          {t.due && <span style={S.dimSmall}>{daysUntil(t.due) <= 0 ? "להיום" : "עוד " + daysUntil(t.due) + " י׳ · " + fmtHe(t.due)}</span>}
+                        </div>
+                      </div>
+                      <div style={S.taskActions}>
+                        <button style={S.breakBtn} disabled={busy && breakingId === t.id} onClick={() => breakDown(t)}>
+                          {busy && breakingId === t.id ? "מפרק…" : "פרק לצעדים"}
+                        </button>
+                        <button style={S.fbBtn} onClick={() => openFeedback(t)}>
+                          תן משוב{bonusArr(t.feedback).length ? " (" + bonusArr(t.feedback).length + ")" : ""}
+                        </button>
+                      </div>
+                    </div>
+                    {bonusArr(t.steps).length > 0 && (
+                      <div style={S.steps}>
+                        {bonusArr(t.steps).map((s) => (
+                          <button key={s.id} style={S.stepRow} onClick={() => toggleStep(t.id, s.id)}>
+                            <span style={{ ...S.stepDot, background: s.done ? C.good : "transparent", borderColor: s.done ? C.good : C.line }} />
+                            <span style={{ ...S.stepText, opacity: s.done ? 0.5 : 1, textDecoration: s.done ? "line-through" : "none" }}>{s.text}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {openTasks.length === 0 && <div style={S.empty}>הכל סגור. נשום רגע — מגיע לך.</div>}
+              </div>
+            </div>
+
+            <div>
+              <SectionTitle>הרגלים יומיים</SectionTitle>
+              <div style={S.habitList}>
+                {habits.map((h) => {
+                  const done = !!todayHabits[h.id];
+                  return (
+                    <button key={h.id} onClick={() => toggleHabit(h.id)}
+                      style={{ ...S.habitCard, borderColor: done ? C.good : C.line, background: done ? "rgba(138,160,90,0.12)" : C.panel }}>
+                      <span style={S.habitEmoji}>{h.emoji}</span>
+                      <span style={{ flex: 1, textAlign: "right" }}>
+                        <div style={S.habitTitle}>{h.title}</div>
+                        <div style={S.dimSmall}>{h.note}</div>
+                      </span>
+                      <span style={{ ...S.habitCheck, background: done ? C.good : "transparent", borderColor: done ? C.good : C.line }}>{done ? "✓" : ""}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={S.encourage}>
+                {habitsDone === habits.length ? "כל ההרגלים סומנו היום. אלוף. 🔥"
+                  : habitsDone === 0 ? "עוד לא התחלת היום. בחר אחד וצא לדרך."
+                  : habitsDone + " מתוך " + habits.length + ". עוד קצת ואתה סוגר את היום."}
+              </div>
+            </div>
+          </div>
+        </React.Fragment>
+      )}
+
+      {tab === "board" && (
+        <section style={{ marginTop: 24 }}>
+          <SectionTitle>לוח משימות · גרור בין סטטוסים</SectionTitle>
+          <div style={S.board} className="board">
+            {STATUS_ORDER.map((st) => {
+              const items = tasks.filter((t) => t.status === st);
+              return (
+                <div key={st} style={S.col} onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { const id = e.dataTransfer.getData("id"); if (id) setStatus(id, st); }}>
+                  <div style={{ ...S.colHead, color: STATUS[st].color }}>{STATUS[st].label} <span style={S.colCount}>{items.length}</span></div>
+                  <div style={S.colBody}>
+                    {items.map((t) => (
+                      <div key={t.id} draggable onDragStart={(e) => e.dataTransfer.setData("id", t.id)}
+                        style={{ ...S.boardCard, borderRightColor: prioColor(t.prio) }}>
+                        <div style={S.boardTitle}>{t.title}</div>
+                        <div style={S.boardMeta}>
+                          <span style={S.ownerChip}>{t.owner}</span>
+                          {t.due && <span style={{ fontSize: 11, color: daysUntil(t.due) <= 2 ? C.danger : C.dim }}>{fmtHe(t.due)}</span>}
+                        </div>
+                        <div style={S.boardBtns}>
+                          {st !== "done" && <button style={S.miniBtn} onClick={() => advance(t)}>קדם ←</button>}
+                          {st !== "todo" && <button style={S.miniBtnGhost} onClick={() => setStatus(t.id, "todo")}>החזר</button>}
+                        </div>
+                      </div>
+                    ))}
+                    {items.length === 0 && <div style={S.colEmpty}>ריק</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {tab === "trip" && (
+        <section style={{ marginTop: 24 }}>
+          <div style={S.tripHead}>
+            <div><div style={S.eyebrow}>מצב טיול · הטיסה ב-10.7</div><h2 style={S.tripH2}>החווה מרחוק</h2></div>
+            <div style={S.tripBig}>{pct}%</div>
+          </div>
+          <div style={S.progWrap}><div style={{ ...S.progBar, width: pct + "%" }} /></div>
+          <div style={S.dimSmall}>{doneCount} מתוך {tasks.length} משימות נסגרו</div>
+
+          <div style={{ marginTop: 22 }}>
+            <SectionTitle>דורש את תשומת ליבך</SectionTitle>
+            {tasks.filter((t) => t.status !== "done" && t.due && daysUntil(t.due) <= 2).length === 0 ? (
+              <div style={S.calm}>הכל רגוע. שום דבר בוער כרגע — תיהנה מהטיול. 🌅</div>
+            ) : (
+              tasks.filter((t) => t.status !== "done" && t.due && daysUntil(t.due) <= 2).map((t) => (
+                <div key={t.id} style={S.tripAlert}>
+                  <div><div style={S.taskTitle}>{t.title}</div><div style={S.dimSmall}>{t.owner} · {daysUntil(t.due) <= 0 ? "להיום" : "עוד " + daysUntil(t.due) + " ימים"}</div></div>
+                  <div style={S.tripBtns}>
+                    <button style={S.miniBtn} onClick={() => setStatus(t.id, "done")}>אשר בוצע</button>
+                    <button style={S.miniBtnGhost} onClick={() => showToast("נשלחה דחיפה ל" + t.owner + " (יחובר לחווה בשלב הבא)")}>דחוף את {t.owner}</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div style={{ marginTop: 22 }}>
+            <SectionTitle>מה זז · לפי בעלים</SectionTitle>
+            {["בני", "צוות", "הזוג"].map((owner) => {
+              const own = tasks.filter((t) => t.owner === owner);
+              const od = own.filter((t) => t.status === "done").length;
+              const op = own.length ? Math.round((od / own.length) * 100) : 0;
+              return (
+                <div key={owner} style={S.ownerRow}>
+                  <span style={{ width: 50, fontWeight: 600 }}>{owner}</span>
+                  <div style={S.ownerProgWrap}><div style={{ ...S.ownerProg, width: op + "%" }} /></div>
+                  <span style={S.dimSmall}>{od}/{own.length}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={S.tripNote}>כרגע המעקב והתגובה פנימיים לעוזרת. בשלב הבא נחבר את זה ל<b>אתר ניהול החווה</b> כך שגיא ואליק יראו את הדחיפות שלך, ואתה תראה בזמן אמת מה הם סגרו — גם מהטיול.</div>
+        </section>
+      )}
+
+      {tab === "patterns" && (
+        <section style={{ marginTop: 24 }}>
+          <div style={S.tripHead}>
+            <div><div style={S.eyebrow}>למה אני נתקע</div><h2 style={S.tripH2}>הדפוסים שלך</h2></div>
+            <div style={{ textAlign: "left" }}><div style={S.statValue}>{allFeedback.length}</div><div style={S.statLabel}>משובים נאספו</div></div>
+          </div>
+          {allFeedback.length < 3 && !patterns && (
+            <div style={S.calm}>עדיין צריך עוד משובים. תן משוב על {3 - allFeedback.length} משימות נוספות והעוזרת תתחיל לזהות את הדפוסים שלך אוטומטית.</div>
+          )}
+          {patBusy && <div style={S.calm}>מנתחת את הדפוסים שלך…</div>}
+          {patterns && patterns.error && <div style={S.tripAlert}><div>{patterns.error}</div></div>}
+          {patterns && !patterns.error && (
+            <div style={S.patWrap}>
+              <PatCard num="01" title="דפוסים לפי סוג משימה" body={patterns.byType} color={C.accent} />
+              <PatCard num="02" title="הסיבה העיקרית לתקיעות" body={patterns.rootCause} color={C.warn} />
+              <PatCard num="03" title="השינוי האחד הכי משפיע" body={patterns.oneChange} color={C.good} accent />
+              <PatCard num="04" title="התקדמות לאורך זמן" body={patterns.trend} color={C.accent2} />
+            </div>
+          )}
+          {allFeedback.length >= 3 && (
+            <button style={{ ...S.btnGhost, marginTop: 18 }} disabled={patBusy} onClick={() => analyzePatterns(allFeedback.length)}>
+              {patBusy ? "מנתחת…" : "נתח מחדש עכשיו"}
+            </button>
+          )}
+          <div style={S.tripNote}>הניתוח מתעדכן אוטומטית כל 3 משובים חדשים. ככל שתתעד יותר, התמונה תהיה מדויקת ואישית יותר.</div>
+        </section>
+      )}
+
+      {/* חיבור AI */}
+      <div style={S.keyBox}>
+        <button style={S.keyToggle} onClick={() => setShowKey(!showKey)}>
+          {showKey ? "▾" : "▸"} חיבור AI {apiKey ? "· מחובר ✓" : "· לא מחובר"}
+        </button>
+        {showKey && (
+          <div style={{ marginTop: 12 }}>
+            <div style={S.dimSmall}>הדבק מפתח Anthropic API להפעלת פירוק משימות, משוב וניתוח דפוסים. נשמר רק בדפדפן שלך.</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <input type="password" style={S.addInput} value={apiKey} onChange={(e) => saveKey(e.target.value)} placeholder="sk-ant-..." />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {fbTask && (
+        <div style={S.modalWrap} onClick={closeFeedback}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()} dir="rtl">
+            <div style={S.modalHead}>
+              <div><div style={S.dimSmall}>משוב על המשימה</div><div style={S.modalTitle}>{fbTask.title}</div></div>
+              <button style={S.modalX} onClick={closeFeedback}>✕</button>
+            </div>
+            {!fbReply && (
+              <React.Fragment>
+                <div style={S.modalQ}>איך היה? מה עבד, מה פחות?</div>
+                <textarea style={S.modalTextarea} value={fbText} onChange={(e) => setFbText(e.target.value)} rows={4}
+                  placeholder="לדוגמה: ניגנתי 10 דקות אבל האצבעות לא הקשיבו, נתקעתי באותו קטע…" />
+                <button style={S.btnAccent} disabled={fbBusy || !fbText.trim()} onClick={sendFeedback}>{fbBusy ? "חושבת…" : "קבל משוב"}</button>
+              </React.Fragment>
+            )}
+            {fbReply && (
+              <React.Fragment>
+                <div style={S.replyBox}>{fbReply}</div>
+                <div style={S.modalBtns}>
+                  <button style={S.btnGhost} onClick={() => { setFbReply(null); setFbText(""); }}>עוד משוב</button>
+                  <button style={S.btnAccent} onClick={closeFeedback}>סגור</button>
+                </div>
+              </React.Fragment>
+            )}
+            {bonusArr(fbTask.feedback).length > 0 && (
+              <div style={S.histWrap}>
+                <div style={S.dimSmall}>פעמים קודמות</div>
+                {bonusArr(fbTask.feedback).slice().reverse().map((h, i) => (
+                  <div key={i} style={S.histRow}><span style={S.histDate}>{fmtHe(h.date)}</span><span style={S.histNote}>{h.note}</span></div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {toast && <div style={S.toast}>{toast}</div>}
+      <footer style={S.footer}>{firebaseReady ? "מחובר ל-Firebase · הנתונים נשמרים." : "מצב מקומי — חבר Firebase לשמירה קבועה (ראה מדריך)."}</footer>
+    </div>
+  );
+}
+
+function Stat({ label, value, accent }) {
+  return <div style={S.stat}><div style={{ ...S.statValue, color: accent ? C.accent : C.text }}>{value}</div><div style={S.statLabel}>{label}</div></div>;
+}
+function SectionTitle({ children }) { return <div style={S.sectionTitle}>{children}</div>; }
+function PatCard({ num, title, body, color, accent }) {
+  return (
+    <div style={{ ...S.patCard, borderColor: accent ? color : C.line, background: accent ? "rgba(138,160,90,0.1)" : C.panel }}>
+      <div style={{ ...S.patNum, color }}>{num}</div>
+      <div style={{ flex: 1 }}><div style={{ ...S.patTitle, color }}>{title}</div><div style={S.patBody}>{body}</div></div>
+    </div>
+  );
+}
+
+const S = {
+  root: { minHeight: "100vh", background: C.bg, color: C.text, padding: "28px 22px calc(60px + env(safe-area-inset-bottom))", maxWidth: 1000, margin: "0 auto" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 18, paddingBottom: 18, borderBottom: "1px solid " + C.line },
+  eyebrow: { color: C.accent, fontSize: 12, letterSpacing: 3, fontWeight: 700 },
+  h1: { margin: "6px 0 0", fontSize: 32, fontWeight: 800, fontFamily: "'Frank Ruhl Libre', serif" },
+  statRow: { display: "flex", gap: 22 },
+  stat: { textAlign: "center" },
+  statValue: { fontSize: 24, fontWeight: 800 },
+  statLabel: { fontSize: 11, color: C.dim, marginTop: 2 },
+  voiceBar: { display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" },
+  voiceBtn: { background: C.accent2, color: "#1d1206", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  voiceGhost: { background: "transparent", color: C.dim, border: "1px solid " + C.line, borderRadius: 10, padding: "9px 14px", fontSize: 13, cursor: "pointer" },
+  voiceToggle: { display: "flex", gap: 6, alignItems: "center", color: C.dim, fontSize: 13, cursor: "pointer" },
+  tabs: { display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" },
+  tab: { background: "transparent", border: "1px solid " + C.line, color: C.dim, borderRadius: 10, padding: "9px 18px", fontSize: 15, fontWeight: 600, cursor: "pointer" },
+  tabActive: { background: C.accent, color: "#1d1206", borderColor: C.accent },
+  checkin: { marginTop: 22, background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 20 },
+  greeting: { fontSize: 18, fontWeight: 600, fontFamily: "'Frank Ruhl Libre', serif" },
+  checkinRow: { display: "flex", gap: 10, marginTop: 14 },
+  focusInput: { flex: 1, background: C.bg, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "12px 14px", outline: "none" },
+  focusLocked: { marginTop: 22, background: "rgba(201,123,64,0.1)", border: "1px solid " + C.accent, borderRadius: 16, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  focusText: { fontSize: 20, fontWeight: 700, marginTop: 2 },
+  grid: { marginTop: 26, display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 26 },
+  sectionTitle: { fontSize: 13, letterSpacing: 2, color: C.accent2, fontWeight: 700, marginBottom: 14 },
+  nextCard: { background: "linear-gradient(135deg, " + C.panel2 + ", " + C.panel + ")", border: "1px solid " + C.accent, borderRadius: 14, padding: 16, marginBottom: 16 },
+  nextTitle: { fontSize: 19, fontWeight: 700, marginTop: 4 },
+  nextMeta: { marginTop: 8, fontSize: 13 },
+  addRow: { display: "flex", gap: 8, marginBottom: 14 },
+  addInput: { flex: 1, background: C.panel, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "11px 13px", outline: "none" },
+  taskList: { display: "flex", flexDirection: "column", gap: 12 },
+  taskCard: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: 14 },
+  taskHead: { display: "flex", gap: 12, alignItems: "flex-start" },
+  check: { width: 22, height: 22, borderRadius: 7, border: "2px solid " + C.line, background: "transparent", cursor: "pointer", marginTop: 2, flexShrink: 0 },
+  taskTitle: { fontSize: 16, fontWeight: 600 },
+  taskMeta: { display: "flex", gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" },
+  pill: { fontSize: 11, border: "1px solid", borderRadius: 20, padding: "2px 9px", fontWeight: 600 },
+  taskActions: { display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 },
+  breakBtn: { background: "transparent", border: "1px solid " + C.accent2, color: C.accent2, borderRadius: 9, padding: "7px 11px", fontSize: 13, cursor: "pointer" },
+  fbBtn: { background: "transparent", border: "1px solid " + C.accent, color: C.accent, borderRadius: 9, padding: "7px 11px", fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" },
+  steps: { marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 8 },
+  stepRow: { display: "flex", gap: 10, alignItems: "center", background: "transparent", border: "none", cursor: "pointer", padding: 0, textAlign: "right" },
+  stepDot: { width: 16, height: 16, borderRadius: "50%", border: "2px solid", flexShrink: 0 },
+  stepText: { color: C.text, fontSize: 14 },
+  habitList: { display: "flex", flexDirection: "column", gap: 10 },
+  habitCard: { display: "flex", gap: 12, alignItems: "center", border: "1px solid", borderRadius: 14, padding: 14, cursor: "pointer", textAlign: "right" },
+  habitEmoji: { fontSize: 24 },
+  habitTitle: { fontSize: 15, fontWeight: 600, color: C.text },
+  habitCheck: { width: 26, height: 26, borderRadius: 8, border: "2px solid", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, flexShrink: 0 },
+  encourage: { marginTop: 16, padding: 14, background: C.panel, borderRadius: 12, fontSize: 14, color: C.dim, textAlign: "center", border: "1px solid " + C.line },
+  board: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 },
+  col: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: 12, minHeight: 200 },
+  colHead: { fontWeight: 800, fontSize: 14, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" },
+  colCount: { background: C.bg, color: C.dim, borderRadius: 20, padding: "1px 9px", fontSize: 12 },
+  colBody: { display: "flex", flexDirection: "column", gap: 10 },
+  boardCard: { background: C.panel2, borderRight: "3px solid", borderRadius: 10, padding: 12, cursor: "grab" },
+  boardTitle: { fontSize: 14, fontWeight: 600, marginBottom: 8 },
+  boardMeta: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  ownerChip: { fontSize: 11, background: C.bg, color: C.accent2, borderRadius: 6, padding: "2px 8px", fontWeight: 600 },
+  boardBtns: { display: "flex", gap: 6 },
+  miniBtn: { flex: 1, background: C.accent2, color: "#1d1206", border: "none", borderRadius: 7, padding: "6px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  miniBtnGhost: { flex: 1, background: "transparent", color: C.dim, border: "1px solid " + C.line, borderRadius: 7, padding: "6px 8px", fontSize: 12, cursor: "pointer" },
+  colEmpty: { color: C.dim, fontSize: 13, textAlign: "center", padding: 16, opacity: 0.6 },
+  tripHead: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  tripH2: { margin: "4px 0 0", fontSize: 26, fontWeight: 800, fontFamily: "'Frank Ruhl Libre', serif" },
+  tripBig: { fontSize: 48, fontWeight: 800, color: C.accent, fontFamily: "'Frank Ruhl Libre', serif" },
+  progWrap: { marginTop: 16, height: 14, background: C.panel, borderRadius: 20, overflow: "hidden", border: "1px solid " + C.line },
+  progBar: { height: "100%", background: "linear-gradient(90deg, " + C.accent2 + ", " + C.accent + ")", transition: "width .4s" },
+  calm: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: 22, textAlign: "center", color: C.dim, fontSize: 15 },
+  tripAlert: { background: C.panel, border: "1px solid " + C.warn, borderRadius: 14, padding: 14, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" },
+  tripBtns: { display: "flex", gap: 8 },
+  ownerRow: { display: "flex", alignItems: "center", gap: 12, marginBottom: 10 },
+  ownerProgWrap: { flex: 1, height: 10, background: C.panel, borderRadius: 20, overflow: "hidden", border: "1px solid " + C.line },
+  ownerProg: { height: "100%", background: C.accent2 },
+  tripNote: { marginTop: 24, padding: 16, background: C.panel, borderRadius: 12, fontSize: 14, color: C.dim, lineHeight: 1.6, border: "1px solid " + C.line },
+  patWrap: { display: "flex", flexDirection: "column", gap: 12, marginTop: 18 },
+  patCard: { display: "flex", gap: 16, border: "1px solid", borderRadius: 14, padding: 18 },
+  patNum: { fontSize: 22, fontWeight: 800, fontFamily: "'Frank Ruhl Libre', serif", opacity: 0.8, flexShrink: 0 },
+  patTitle: { fontSize: 15, fontWeight: 700, marginBottom: 6 },
+  patBody: { fontSize: 15, lineHeight: 1.6, color: C.text },
+  keyBox: { marginTop: 28, padding: 14, background: C.panel, borderRadius: 12, border: "1px solid " + C.line },
+  keyToggle: { background: "transparent", border: "none", color: C.dim, fontSize: 14, cursor: "pointer", fontWeight: 600 },
+  btnAccent: { background: C.accent, color: "#1d1206", border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 16, fontWeight: 700, cursor: "pointer" },
+  btnGhost: { background: "transparent", color: C.dim, border: "1px solid " + C.line, borderRadius: 9, padding: "10px 14px", cursor: "pointer", fontSize: 13 },
+  dimSmall: { fontSize: 12, color: C.dim },
+  empty: { color: C.dim, textAlign: "center", padding: 30 },
+  modalWrap: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 },
+  modal: { background: C.panel, border: "1px solid " + C.line, borderRadius: 18, padding: 22, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto" },
+  modalHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 },
+  modalTitle: { fontSize: 18, fontWeight: 700, marginTop: 2 },
+  modalX: { background: "transparent", border: "none", color: C.dim, fontSize: 20, cursor: "pointer" },
+  modalQ: { fontSize: 15, fontWeight: 600, marginBottom: 10, fontFamily: "'Frank Ruhl Libre', serif" },
+  modalTextarea: { width: "100%", background: C.bg, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: 12, outline: "none", resize: "vertical", marginBottom: 14 },
+  replyBox: { background: "rgba(122,139,79,0.14)", border: "1px solid " + C.accent2, borderRadius: 12, padding: 16, fontSize: 15, lineHeight: 1.65, marginBottom: 14 },
+  modalBtns: { display: "flex", gap: 10 },
+  histWrap: { marginTop: 18, paddingTop: 14, borderTop: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 8 },
+  histRow: { display: "flex", gap: 10, fontSize: 13 },
+  histDate: { color: C.accent, fontWeight: 600, flexShrink: 0 },
+  histNote: { color: C.dim },
+  toast: { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: C.accent, color: "#1d1206", padding: "12px 22px", borderRadius: 12, fontWeight: 600, boxShadow: "0 8px 30px rgba(0,0,0,0.4)", zIndex: 70, maxWidth: "90%", textAlign: "center" },
+  footer: { marginTop: 40, paddingTop: 20, borderTop: "1px solid " + C.line, color: C.dim, fontSize: 13, textAlign: "center" },
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
