@@ -336,32 +336,52 @@ function App() {
     if (loaded && n >= 3 && n - lastAnalyzedAt >= 3 && !patBusy && apiKey) analyzePatterns(n);
   }, [allFeedback.length]);
 
-  // ----- צ'אט עם AI -----
+  // ----- צ'אט עם AI (שיחתי — שואל שאלות, מפצל לפרויקט) -----
   const sendChat = async () => {
     const msg = chatInput.trim();
     if (!msg || chatBusy) return;
     setChatInput("");
-    setChatMsgs((p) => [...p, { role: "user", text: msg }]);
+    const newHistory = [...chatMsgs, { role: "user", text: msg }];
+    setChatMsgs(newHistory);
     setChatBusy(true);
     try {
+      // בונים תמליל שיחה לקונטקסט
+      const convo = newHistory.map((m) => (m.role === "user" ? "בני: " : "עוזרת: ") + m.text).join("\n");
       const text = await callAI(
         'אתה העוזר האישי של בני, מנהל חווה חינוכית בישראל. ישיר, חם ומדרבן.\n' +
-        'בני כותב לך משהו. אם זה נשמע כמו משימה או מטרה — החזר JSON שמוסיף אותה ונותן רעיונות מה צריך כדי להשיג אותה.\n' +
-        'אם זו רק שאלה או שיחה — ענה בלי להוסיף משימה.\n' +
+        'נהל שיחה: כשבני מעלה משימה או מטרה, קודם שאל 1-2 שאלות הבהרה (למשל פנים או חוץ? מתי צריך? כמה גדול?) לפני שאתה מוסיף משהו. רק אחרי שיש לך מספיק מידע — הוסף.\n' +
+        'אם מדובר במשהו גדול — פצל לפרויקט עם תת-משימות והצע תאריך יעד.\n' +
         'החזר JSON בלבד במבנה:\n' +
-        '{"reply":"תשובה קצרה וחמה בעברית","addTask":"כותרת משימה לְהוספה או ריק אם אין","ideas":["רעיון/דבר שצריך","..."]}\n\n' +
-        'מה שבני כתב: "' + msg + '"', apiKey);
+        '{"reply":"תשובה/שאלה קצרה בעברית","needMoreInfo":true/false,"addTask":"כותרת או ריק","subtasks":["תת-משימה","..."],"suggestedDue":"YYYY-MM-DD או ריק","ideas":["מה צריך","..."]}\n' +
+        'כל עוד needMoreInfo=true — אל תוסיף משימה (addTask ריק), רק שאל.\n' +
+        'התאריך היום הוא ' + tk + '.\n\n' +
+        'השיחה עד כה:\n' + convo, apiKey);
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       let added = null;
-      if (parsed.addTask && parsed.addTask.trim()) {
-        added = { id: "c" + Date.now(), title: parsed.addTask.trim(), due: "", cat: "כללי", prio: "med", status: "todo", owner: "בני", steps: [], feedback: [] };
+      if (parsed.addTask && parsed.addTask.trim() && !parsed.needMoreInfo) {
+        const subs = (parsed.subtasks || []).map((s, i) => ({ id: "p" + Date.now() + "-" + i, text: s, done: false }));
+        added = {
+          id: "c" + Date.now(),
+          title: parsed.addTask.trim(),
+          due: parsed.suggestedDue && /^\d{4}-\d{2}-\d{2}$/.test(parsed.suggestedDue) ? parsed.suggestedDue : "",
+          cat: subs.length ? "פרויקט" : "כללי",
+          prio: "med", status: "todo", owner: "בני",
+          steps: subs, feedback: [],
+        };
         setTasks((p) => [...p, added]);
       }
-      setChatMsgs((p) => [...p, { role: "ai", text: parsed.reply || "", ideas: parsed.ideas || [], added: added ? added.title : null }]);
+      setChatMsgs((p) => [...p, {
+        role: "ai", text: parsed.reply || "",
+        ideas: parsed.ideas || [],
+        added: added ? added.title : null,
+        addedDue: added && added.due ? added.due : null,
+        subCount: added ? added.steps.length : 0,
+      }]);
     } catch (e) {
       setChatMsgs((p) => [...p, { role: "ai", text: e.message === "no-key" ? "צריך מפתח AI — פתח 'חיבור AI' בתחתית." : "לא הצלחתי כרגע. נסה שוב." }]);
     } finally { setChatBusy(false); }
   };
+  const clearChat = () => setChatMsgs([]);
 
   const prioColor = (p) => (p === "high" ? C.danger : p === "med" ? C.warn : C.dim);
 
@@ -513,7 +533,7 @@ function App() {
       {tab === "chat" && (
         <section style={{ marginTop: 24 }}>
           <SectionTitle>דבר עם העוזרת</SectionTitle>
-          <div style={S.chatHint}>כתוב משימה או מטרה, והעוזרת תוסיף אותה ותציע לך מה צריך כדי להשיג אותה.</div>
+          <div style={S.chatHint}>כתוב משימה או מטרה. העוזרת תשאל אותך כמה שאלות, ואז תוסיף — ותפצל לפרויקט עם תת-משימות ותאריך אם צריך.</div>
           <div style={S.chatWindow}>
             {chatMsgs.length === 0 && (
               <div style={S.chatEmpty}>
@@ -523,7 +543,13 @@ function App() {
             {chatMsgs.map((m, i) => (
               <div key={i} style={{ ...S.chatBubble, ...(m.role === "user" ? S.chatUser : S.chatAi) }}>
                 <div>{m.text}</div>
-                {m.added && <div style={S.chatAdded}>✓ נוספה המשימה: {m.added}</div>}
+                {m.added && (
+                  <div style={S.chatAdded}>
+                    ✓ נוספה{m.subCount > 0 ? " כפרויקט" : " המשימה"}: {m.added}
+                    {m.subCount > 0 ? " (" + m.subCount + " תת-משימות)" : ""}
+                    {m.addedDue ? " · יעד " + fmtHe(m.addedDue) : ""}
+                  </div>
+                )}
                 {m.ideas && m.ideas.length > 0 && (
                   <div style={S.chatIdeas}>
                     <div style={S.dimSmall}>מה צריך:</div>
@@ -541,6 +567,9 @@ function App() {
               placeholder="כתוב כאן…" onKeyDown={(e) => e.key === "Enter" && sendChat()} />
             <button style={S.btnAccent} disabled={chatBusy || !chatInput.trim()} onClick={sendChat}>שלח</button>
           </div>
+          {chatMsgs.length > 0 && (
+            <button style={{ ...S.btnGhost, marginTop: 10 }} onClick={clearChat}>התחל שיחה חדשה</button>
+          )}
         </section>
       )}
 
