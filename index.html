@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>העוזרת</title>
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#1d2419" />
+<meta name="theme-color" content="#5b6ef5" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700;800&family=Frank+Ruhl+Libre:wght@500;700;900&display=swap" rel="stylesheet" />
 
@@ -20,10 +20,10 @@
 
 <style>
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #1d2419; overflow-x: hidden; }
+  html, body { margin: 0; padding: 0; background: #f4f5f7; overflow-x: hidden; }
   body { font-family: 'Heebo', system-ui, sans-serif; }
   input, textarea, button { font-family: inherit; font-size: 16px; } /* 16px מונע זום באייפון */
-  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #c97b40; outline-offset: 2px; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #5b6ef5; outline-offset: 2px; }
   @media (max-width: 760px) {
     .grid { grid-template-columns: 1fr !important; }
     .board { grid-template-columns: 1fr !important; }
@@ -95,9 +95,9 @@ function bonusArr(v) {
 
 /* ---------- צבעים ---------- */
 const C = {
-  bg: "#1d2419", panel: "#262e20", panel2: "#2f3829", line: "#3d4733",
-  text: "#eae6d8", dim: "#a3a08f", accent: "#c97b40", accent2: "#7a8b4f",
-  good: "#8aa05a", warn: "#d4904a", danger: "#c4634a",
+  bg: "#f4f5f7", panel: "#ffffff", panel2: "#f7f8fa", line: "#e2e5ea",
+  text: "#222b3a", dim: "#7a8499", accent: "#5b6ef5", accent2: "#00c875",
+  good: "#00c875", warn: "#fdab3d", danger: "#e2445c",
 };
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
@@ -611,7 +611,7 @@ function App() {
                   const done = !!todayHabits[h.id];
                   return (
                     <button key={h.id} onClick={() => toggleHabit(h.id)}
-                      style={{ ...S.habitCard, borderColor: done ? C.good : C.line, background: done ? "rgba(138,160,90,0.12)" : C.panel }}>
+                      style={{ ...S.habitCard, borderColor: done ? C.good : C.line, background: done ? "rgba(0,200,117,0.12)" : C.panel }}>
                       <span style={S.habitEmoji}>{h.emoji}</span>
                       <span style={{ flex: 1, textAlign: "right" }}>
                         <div style={S.habitTitle}>{h.title}</div>
@@ -854,7 +854,7 @@ function App() {
             <div style={S.editChips}>
               {[["high", "דחוף"], ["med", "רגיל"], ["low", "נמוך"]].map(([v, l]) => (
                 <button key={v} onClick={() => setEditTask({ ...editTask, prio: v })}
-                  style={{ ...S.editChip, ...(editTask.prio === v ? { background: prioColor(v), color: "#1d1206", borderColor: prioColor(v) } : {}) }}>{l}</button>
+                  style={{ ...S.editChip, ...(editTask.prio === v ? { background: prioColor(v), color: "#ffffff", borderColor: prioColor(v) } : {}) }}>{l}</button>
               ))}
             </div>
 
@@ -862,7 +862,7 @@ function App() {
             <div style={S.editChips}>
               {["בני", "צוות", "הזוג", "גיא", "אליק"].map((o) => (
                 <button key={o} onClick={() => setEditTask({ ...editTask, owner: o })}
-                  style={{ ...S.editChip, ...(editTask.owner === o ? { background: C.accent2, color: "#1d1206", borderColor: C.accent2 } : {}) }}>{o}</button>
+                  style={{ ...S.editChip, ...(editTask.owner === o ? { background: C.accent2, color: "#ffffff", borderColor: C.accent2 } : {}) }}>{o}</button>
               ))}
             </div>
 
@@ -885,7 +885,7 @@ function App() {
                     <div style={S.editChips}>
                       {FARM_AREAS.map(([v, l]) => (
                         <button key={v} onClick={() => setEditTask({ ...editTask, farmArea: v })}
-                          style={{ ...S.editChip, ...(editTask.farmArea === v ? { background: C.accent2, color: "#1d1206", borderColor: C.accent2 } : {}) }}>{l}</button>
+                          style={{ ...S.editChip, ...(editTask.farmArea === v ? { background: C.accent2, color: "#ffffff", borderColor: C.accent2 } : {}) }}>{l}</button>
                       ))}
                     </div>
 
@@ -924,7 +924,7 @@ function Stat({ label, value, accent }) {
 function SectionTitle({ children }) { return <div style={S.sectionTitle}>{children}</div>; }
 function PatCard({ num, title, body, color, accent }) {
   return (
-    <div style={{ ...S.patCard, borderColor: accent ? color : C.line, background: accent ? "rgba(138,160,90,0.1)" : C.panel }}>
+    <div style={{ ...S.patCard, borderColor: accent ? color : C.line, background: accent ? "rgba(0,200,117,0.1)" : C.panel }}>
       <div style={{ ...S.patNum, color }}>{num}</div>
       <div style={{ flex: 1 }}><div style={{ ...S.patTitle, color }}>{title}</div><div style={S.patBody}>{body}</div></div>
     </div>
@@ -941,17 +941,17 @@ const S = {
   statValue: { fontSize: 24, fontWeight: 800 },
   statLabel: { fontSize: 11, color: C.dim, marginTop: 2 },
   voiceBar: { display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" },
-  voiceBtn: { background: C.accent2, color: "#1d1206", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  voiceBtn: { background: C.accent2, color: "#ffffff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer" },
   voiceGhost: { background: "transparent", color: C.dim, border: "1px solid " + C.line, borderRadius: 10, padding: "9px 14px", fontSize: 13, cursor: "pointer" },
   voiceToggle: { display: "flex", gap: 6, alignItems: "center", color: C.dim, fontSize: 13, cursor: "pointer" },
   tabs: { display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" },
   tab: { background: "transparent", border: "1px solid " + C.line, color: C.dim, borderRadius: 10, padding: "9px 18px", fontSize: 15, fontWeight: 600, cursor: "pointer" },
-  tabActive: { background: C.accent, color: "#1d1206", borderColor: C.accent },
+  tabActive: { background: C.accent, color: "#ffffff", borderColor: C.accent },
   checkin: { marginTop: 22, background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 20 },
   greeting: { fontSize: 18, fontWeight: 600, fontFamily: "'Frank Ruhl Libre', serif" },
   checkinRow: { display: "flex", gap: 10, marginTop: 14 },
   focusInput: { flex: 1, background: C.bg, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "12px 14px", outline: "none" },
-  focusLocked: { marginTop: 22, background: "rgba(201,123,64,0.1)", border: "1px solid " + C.accent, borderRadius: 16, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  focusLocked: { marginTop: 22, background: "rgba(91,110,245,0.08)", border: "1px solid " + C.accent, borderRadius: 16, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
   focusText: { fontSize: 20, fontWeight: 700, marginTop: 2 },
   grid: { marginTop: 26, display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 26 },
   sectionTitle: { fontSize: 13, letterSpacing: 2, color: C.accent2, fontWeight: 700, marginBottom: 14 },
@@ -961,7 +961,7 @@ const S = {
   addRow: { display: "flex", gap: 8, marginBottom: 14 },
   addInput: { flex: 1, background: C.panel, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "11px 13px", outline: "none" },
   taskList: { display: "flex", flexDirection: "column", gap: 12 },
-  taskCard: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: 14 },
+  taskCard: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: 14, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
   taskHead: { display: "flex", gap: 12, alignItems: "flex-start" },
   check: { width: 22, height: 22, borderRadius: 7, border: "2px solid " + C.line, background: "transparent", cursor: "pointer", marginTop: 2, flexShrink: 0 },
   taskTitle: { fontSize: 16, fontWeight: 600 },
@@ -999,7 +999,7 @@ const S = {
   boardMeta: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   ownerChip: { fontSize: 11, background: C.bg, color: C.accent2, borderRadius: 6, padding: "2px 8px", fontWeight: 600 },
   boardBtns: { display: "flex", gap: 6 },
-  miniBtn: { flex: 1, background: C.accent2, color: "#1d1206", border: "none", borderRadius: 7, padding: "6px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  miniBtn: { flex: 1, background: C.accent2, color: "#ffffff", border: "none", borderRadius: 7, padding: "6px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   miniBtnGhost: { flex: 1, background: "transparent", color: C.dim, border: "1px solid " + C.line, borderRadius: 7, padding: "6px 8px", fontSize: 12, cursor: "pointer" },
   colEmpty: { color: C.dim, fontSize: 13, textAlign: "center", padding: 16, opacity: 0.6 },
   tripHead: { display: "flex", justifyContent: "space-between", alignItems: "center" },
@@ -1021,7 +1021,7 @@ const S = {
   patBody: { fontSize: 15, lineHeight: 1.6, color: C.text },
   keyBox: { marginTop: 28, padding: 14, background: C.panel, borderRadius: 12, border: "1px solid " + C.line },
   keyToggle: { background: "transparent", border: "none", color: C.dim, fontSize: 14, cursor: "pointer", fontWeight: 600 },
-  btnAccent: { background: C.accent, color: "#1d1206", border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 16, fontWeight: 700, cursor: "pointer" },
+  btnAccent: { background: C.accent, color: "#ffffff", border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 16, fontWeight: 700, cursor: "pointer" },
   btnGhost: { background: "transparent", color: C.dim, border: "1px solid " + C.line, borderRadius: 9, padding: "10px 14px", cursor: "pointer", fontSize: 13 },
   dimSmall: { fontSize: 12, color: C.dim },
   empty: { color: C.dim, textAlign: "center", padding: 30 },
@@ -1030,7 +1030,7 @@ const S = {
   chatWindow: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 16, minHeight: 280, maxHeight: 460, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 },
   chatEmpty: { color: C.dim, fontSize: 14, textAlign: "center", padding: 30, lineHeight: 1.7 },
   chatBubble: { padding: "12px 16px", borderRadius: 14, fontSize: 15, lineHeight: 1.55, maxWidth: "85%" },
-  chatUser: { background: C.accent, color: "#1d1206", alignSelf: "flex-start", fontWeight: 600 },
+  chatUser: { background: C.accent, color: "#ffffff", alignSelf: "flex-start", fontWeight: 600 },
   chatAi: { background: C.panel2, color: C.text, alignSelf: "flex-end", border: "1px solid " + C.line },
   chatAdded: { marginTop: 8, color: C.good, fontSize: 13, fontWeight: 600 },
   chatIdeas: { marginTop: 10, paddingTop: 10, borderTop: "1px solid " + C.line, display: "flex", flexDirection: "column", gap: 4 },
@@ -1050,7 +1050,7 @@ const S = {
   histRow: { display: "flex", gap: 10, fontSize: 13 },
   histDate: { color: C.accent, fontWeight: 600, flexShrink: 0 },
   histNote: { color: C.dim },
-  toast: { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: C.accent, color: "#1d1206", padding: "12px 22px", borderRadius: 12, fontWeight: 600, boxShadow: "0 8px 30px rgba(0,0,0,0.4)", zIndex: 70, maxWidth: "90%", textAlign: "center" },
+  toast: { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: C.accent, color: "#ffffff", padding: "12px 22px", borderRadius: 12, fontWeight: 600, boxShadow: "0 8px 30px rgba(20,30,60,0.18)", zIndex: 70, maxWidth: "90%", textAlign: "center" },
   footer: { marginTop: 40, paddingTop: 20, borderTop: "1px solid " + C.line, color: C.dim, fontSize: 13, textAlign: "center" },
 };
 
