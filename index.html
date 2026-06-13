@@ -527,6 +527,23 @@ function App() {
   };
   const setEveningField = (field, val) => setEveningNotes((p) => ({ ...p, [tk]: { ...(p[tk] || {}), [field]: val } }));
 
+  // הופך את "3 הדברים החשובים למחר" למשימות אמיתיות עם תאריך מחר
+  const top3ToTasks = () => {
+    const notes = eveningNotes[tk] || {};
+    const raw = (notes.top3 || "").trim();
+    if (!raw) { showToast("קודם מלא את 3 הדברים החשובים למחר."); return; }
+    // פיצול לשורות, וניקוי מספור בתחילת השורה
+    const lines = raw.split("\n").map((l) => l.replace(/^\s*\d+[.)]\s*/, "").replace(/^\s*[-•]\s*/, "").trim()).filter((l) => l.length > 0);
+    if (lines.length === 0) { showToast("לא מצאתי דברים להפוך למשימות."); return; }
+    const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return isoOf(d); })();
+    const newTasks = lines.map((title, i) => ({
+      id: "u" + Date.now() + "-" + i, title, due: tomorrow, cat: "כללי", topic: "general",
+      repeat: "once", prio: "high", status: "todo", owner: "בני", steps: [], feedback: [],
+    }));
+    setTasks((p) => [...p, ...newTasks]);
+    showToast("✓ " + newTasks.length + " משימות נוספו למחר!");
+  };
+
   const openFeedback = (task) => { setFbTask(task); setFbText(""); setFbReply(null); };
   const closeFeedback = () => { setFbTask(null); setFbText(""); setFbReply(null); };
   const sendFeedback = async () => {
@@ -919,6 +936,8 @@ function App() {
                     <label style={S.editLabel}>📋 3 הדברים החשובים למחר</label>
                     <textarea style={S.eveningArea} value={notes.top3 || ""} rows={3}
                       onChange={(e) => setEveningField("top3", e.target.value)} placeholder="1. …&#10;2. …&#10;3. …" />
+
+                    <button style={S.top3Btn} onClick={top3ToTasks}>➕ הפוך אותם למשימות למחר</button>
 
                     <div style={S.eveningClose}>😌 סיימנו להיום. מחר מתוכנן.</div>
                   </div>
@@ -1583,6 +1602,7 @@ const S = {
   ritualArrow: { fontSize: 12, color: C.dim },
   eveningArea: { width: "100%", background: C.panel2, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "10px 12px", outline: "none", resize: "vertical", fontFamily: "inherit", fontSize: 15, marginBottom: 6 },
   eveningClose: { textAlign: "center", fontSize: 14, color: C.accent, fontWeight: 600, marginTop: 10, padding: "8px", background: "rgba(91,110,245,0.06)", borderRadius: 10 },
+  top3Btn: { width: "100%", marginTop: 4, marginBottom: 6, background: C.good, color: "#fff", border: "none", borderRadius: 12, padding: "12px", fontSize: 15, fontWeight: 700, cursor: "pointer" },
   morningHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   morningTitle: { fontSize: 16, fontWeight: 700, color: C.text },
   morningProg: { fontSize: 13, fontWeight: 700, color: C.warn },
