@@ -598,6 +598,8 @@ function App() {
       cat: editTask.cat,
       topic: editTask.topic || "general",
       repeat: editTask.repeat || "once",
+      startTime: editTask.startTime || "",
+      durMin: editTask.durMin || "",
     } : t));
     setEditTask(null);
     showToast("המשימה עודכנה.");
@@ -612,18 +614,35 @@ function App() {
   // הוספה ליומן הטלפון — יוצר קובץ ICS שהטלפון פותח ומוסיף עם תזכורת
   const addToCalendar = (task) => {
     if (!task.due) { showToast("קודם הוסף תאריך למשימה (בעריכה)."); return; }
-    const d = task.due.replace(/-/g, ""); // YYYYMMDD
-    const dtStart = d; // אירוע של יום שלם
-    const dObj = new Date(task.due); dObj.setDate(dObj.getDate() + 1);
-    const dtEnd = dObj.getFullYear() + String(dObj.getMonth() + 1).padStart(2, "0") + String(dObj.getDate()).padStart(2, "0");
     const uid = "olga-" + (task.id || Date.now()) + "@olga";
     const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    let startLine, endLine, alarm;
+    if (task.startTime) {
+      // אירוע מתוזמן עם שעת התחלה ומשך
+      const [hh, mm] = task.startTime.split(":").map(Number);
+      const startDt = new Date(task.due + "T00:00:00");
+      startDt.setHours(hh, mm, 0, 0);
+      const dur = Number(task.durMin) || 30;
+      const endDt = new Date(startDt.getTime() + dur * 60000);
+      const fmt = (dt) => dt.getFullYear() + String(dt.getMonth() + 1).padStart(2, "0") + String(dt.getDate()).padStart(2, "0") + "T" + String(dt.getHours()).padStart(2, "0") + String(dt.getMinutes()).padStart(2, "0") + "00";
+      startLine = "DTSTART:" + fmt(startDt);
+      endLine = "DTEND:" + fmt(endDt);
+      alarm = "TRIGGER:-PT30M"; // תזכורת 30 דק׳ לפני
+    } else {
+      // אירוע של יום שלם
+      const d = task.due.replace(/-/g, "");
+      const dObj = new Date(task.due); dObj.setDate(dObj.getDate() + 1);
+      const dEnd = dObj.getFullYear() + String(dObj.getMonth() + 1).padStart(2, "0") + String(dObj.getDate()).padStart(2, "0");
+      startLine = "DTSTART;VALUE=DATE:" + d;
+      endLine = "DTEND;VALUE=DATE:" + dEnd;
+      alarm = "TRIGGER:-PT9H"; // תזכורת בבוקר
+    }
     const ics = [
       "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Olga//HE", "CALSCALE:GREGORIAN",
       "BEGIN:VEVENT", "UID:" + uid, "DTSTAMP:" + stamp,
-      "DTSTART;VALUE=DATE:" + dtStart, "DTEND;VALUE=DATE:" + dtEnd,
+      startLine, endLine,
       "SUMMARY:" + task.title,
-      "BEGIN:VALARM", "TRIGGER:-PT9H", "ACTION:DISPLAY", "DESCRIPTION:" + task.title, "END:VALARM",
+      "BEGIN:VALARM", alarm, "ACTION:DISPLAY", "DESCRIPTION:" + task.title, "END:VALARM",
       "END:VEVENT", "END:VCALENDAR",
     ].join("\r\n");
     const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
@@ -872,6 +891,7 @@ function App() {
                           <span style={{ ...S.pill, borderColor: prioColor(t.prio), color: prioColor(t.prio) }}>{t.cat}</span>
                           <span style={{ ...S.pill, borderColor: STATUS[t.status].color, color: STATUS[t.status].color }}>{STATUS[t.status].label}</span>
                           {t.due && <span style={S.dimSmall}>{daysUntil(t.due) <= 0 ? "להיום" : "עוד " + daysUntil(t.due) + " י׳ · " + fmtHe(t.due)}</span>}
+                          {t.startTime && <span style={{ ...S.pill, borderColor: C.accent, color: C.accent }}>🕐 {t.startTime}{t.durMin ? " · " + (Number(t.durMin) >= 60 ? (Number(t.durMin) / 60) + " ש׳" : t.durMin + " דק׳") : ""}</span>}
                         </div>
                       </div>
                       <div style={S.taskActions}>
@@ -1332,6 +1352,27 @@ function App() {
             <input type="date" style={S.editInput} value={editTask.due || ""}
               onChange={(e) => setEditTask({ ...editTask, due: e.target.value })} />
 
+            <label style={S.editLabel}>שעת התחלה</label>
+            <input type="time" style={S.editInput} value={editTask.startTime || ""}
+              onChange={(e) => setEditTask({ ...editTask, startTime: e.target.value })} />
+
+            <label style={S.editLabel}>כמה זמן ייקח?</label>
+            <div style={S.editChips}>
+              {[["15", "15 דק׳"], ["30", "30 דק׳"], ["60", "שעה"], ["90", "שעה וחצי"], ["120", "שעתיים"]].map(([v, l]) => (
+                <button key={v} onClick={() => setEditTask({ ...editTask, durMin: v })}
+                  style={{ ...S.editChip, ...((editTask.durMin || "") === v ? { background: C.accent, color: "#fff", borderColor: C.accent } : {}) }}>{l}</button>
+              ))}
+            </div>
+            {editTask.durMin && (
+              <div style={S.durHint}>
+                {Number(editTask.durMin) <= 30
+                  ? "🟢 משימה קצרה — מצוין למילוי בין דברים"
+                  : Number(editTask.durMin) >= 90
+                    ? "🔴 משימה ארוכה — שריין לה זמן ביומן"
+                    : "🟡 משימה בינונית"}
+              </div>
+            )}
+
             <label style={S.editLabel}>דחיפות</label>
             <div style={S.editChips}>
               {[["high", "דחוף"], ["med", "רגיל"], ["low", "נמוך"]].map(([v, l]) => (
@@ -1466,6 +1507,7 @@ const S = {
   weekCube: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 16, marginTop: 22, marginBottom: 4, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
   todayBanner: { background: "linear-gradient(135deg, #fff1e6, #ffe0e6)", border: "1px solid #ffd0c0", borderRadius: 16, padding: "14px 18px", marginBottom: 4 },
   calAddBtn: { width: "100%", marginTop: 14, background: "rgba(91,110,245,0.08)", border: "1px solid " + C.accent, color: C.accent, borderRadius: 12, padding: "12px", fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  durHint: { fontSize: 13, color: C.text, marginTop: 8, fontWeight: 600 },
   todayBannerTop: { display: "flex", alignItems: "center", gap: 8 },
   todayBannerIcon: { fontSize: 20 },
   todayBannerTitle: { fontSize: 16, fontWeight: 800, color: "#c0392b" },
