@@ -930,6 +930,16 @@ function App() {
           <div style={S.grid} className="grid">
             <div>
               <SectionTitle>היום שלי</SectionTitle>
+              <div style={S.filterRow}>
+                <button onClick={() => setTopicFilter("all")}
+                  style={{ ...S.filterChip, ...(topicFilter === "all" ? { background: C.text, color: "#fff", borderColor: C.text } : {}) }}>הכל</button>
+                {Object.entries(TOPICS).map(([k, t]) => (
+                  <button key={k} onClick={() => setTopicFilter(k)}
+                    style={{ ...S.filterChip, ...(topicFilter === k ? { background: t.color, color: "#fff", borderColor: t.color } : { color: t.color, borderColor: t.color }) }}>
+                    {t.emoji} {t.label}
+                  </button>
+                ))}
+              </div>
               {nextTask && (
                 <div style={S.nextCard}>
                   <div style={S.dimSmall}>הבא בתור · הכי דחוף</div>
@@ -949,16 +959,6 @@ function App() {
                 <button style={S.btnAccent} onClick={addTask}>+</button>
               </div>
               <div style={S.addHint}>הוסף משימה, ואז ✎ כדי לבחור נושא, תדירות, תאריך ועוד.</div>
-              <div style={S.filterRow}>
-                <button onClick={() => setTopicFilter("all")}
-                  style={{ ...S.filterChip, ...(topicFilter === "all" ? { background: C.text, color: "#fff", borderColor: C.text } : {}) }}>הכל</button>
-                {Object.entries(TOPICS).map(([k, t]) => (
-                  <button key={k} onClick={() => setTopicFilter(k)}
-                    style={{ ...S.filterChip, ...(topicFilter === k ? { background: t.color, color: "#fff", borderColor: t.color } : { color: t.color, borderColor: t.color }) }}>
-                    {t.emoji} {t.label}
-                  </button>
-                ))}
-              </div>
               <div style={S.taskList}>
                 {homeTasks.map((t) => (
                   <div key={t.id} style={{ ...S.taskCard, borderRight: "4px solid " + topicOf(t.topic).color }}>
@@ -969,10 +969,9 @@ function App() {
                         <div style={S.taskMeta}>
                           <span style={{ ...S.pill, borderColor: topicOf(t.topic).color, color: topicOf(t.topic).color }}>{topicOf(t.topic).emoji} {topicOf(t.topic).label}</span>
                           {t.repeat && t.repeat !== "once" && <span style={{ ...S.pill, borderColor: C.accent, color: C.accent }}>{repeatLabel(t.repeat)}</span>}
-                          <span style={{ ...S.pill, borderColor: prioColor(t.prio), color: prioColor(t.prio) }}>{t.cat}</span>
-                          <span style={{ ...S.pill, borderColor: STATUS[t.status].color, color: STATUS[t.status].color }}>{STATUS[t.status].label}</span>
-                          {t.due && <span style={S.dimSmall}>{daysUntil(t.due) <= 0 ? "להיום" : "עוד " + daysUntil(t.due) + " י׳ · " + fmtHe(t.due)}</span>}
+                          {t.cat && t.cat !== "כללי" && <span style={{ ...S.pill, borderColor: prioColor(t.prio), color: prioColor(t.prio) }}>{t.cat}</span>}
                           {t.startTime && <span style={{ ...S.pill, borderColor: C.accent, color: C.accent }}>🕐 {t.startTime}{t.durMin ? " · " + (Number(t.durMin) >= 60 ? (Number(t.durMin) / 60) + " ש׳" : t.durMin + " דק׳") : ""}</span>}
+                          {t.due && <span style={S.dimSmall}>{daysUntil(t.due) <= 0 ? "להיום" : "עוד " + daysUntil(t.due) + " י׳ · " + fmtHe(t.due)}</span>}
                         </div>
                       </div>
                       <div style={S.taskActions}>
@@ -1007,31 +1006,6 @@ function App() {
                     {showAllTasks ? "הצג רק את היום ▲" : "הצג את כל המשימות (" + laterTasks.length + " נוספות) ▼"}
                   </button>
                 )}
-              </div>
-            </div>
-
-            <div>
-              <SectionTitle>הרגלים יומיים</SectionTitle>
-              <div style={S.habitList}>
-                {habits.map((h) => {
-                  const done = !!todayHabits[h.id];
-                  return (
-                    <button key={h.id} onClick={() => toggleHabit(h.id)}
-                      style={{ ...S.habitCard, borderColor: done ? C.good : C.line, background: done ? "rgba(0,200,117,0.12)" : C.panel }}>
-                      <span style={S.habitEmoji}>{h.emoji}</span>
-                      <span style={{ flex: 1, textAlign: "right" }}>
-                        <div style={S.habitTitle}>{h.title}</div>
-                        <div style={S.dimSmall}>{h.note}</div>
-                      </span>
-                      <span style={{ ...S.habitCheck, background: done ? C.good : "transparent", borderColor: done ? C.good : C.line }}>{done ? "✓" : ""}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div style={S.encourage}>
-                {habitsDone === habits.length ? "כל ההרגלים סומנו היום. אלוף. 🔥"
-                  : habitsDone === 0 ? "עוד לא התחלת היום. בחר אחד וצא לדרך."
-                  : habitsDone + " מתוך " + habits.length + ". עוד קצת ואתה סוגר את היום."}
               </div>
             </div>
           </div>
@@ -1577,7 +1551,7 @@ const S = {
   focusInput: { flex: 1, background: C.bg, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "12px 14px", outline: "none" },
   focusLocked: { marginTop: 22, background: "rgba(91,110,245,0.08)", border: "1px solid " + C.accent, borderRadius: 16, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
   focusText: { fontSize: 20, fontWeight: 700, marginTop: 2 },
-  grid: { marginTop: 26, display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 26 },
+  grid: { marginTop: 26, display: "grid", gridTemplateColumns: "1fr", gap: 26 },
   sectionTitle: { fontSize: 13, letterSpacing: 1.5, color: C.dim, fontWeight: 700, marginBottom: 14, textTransform: "uppercase" },
   nextCard: { background: "linear-gradient(135deg, " + C.panel2 + ", " + C.panel + ")", border: "1px solid " + C.accent, borderRadius: 14, padding: 16, marginBottom: 16, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
   nextTitle: { fontSize: 19, fontWeight: 700, marginTop: 4 },
