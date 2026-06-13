@@ -108,12 +108,16 @@ const C = {
 const TOPICS = {
   farm: { label: "חווה", emoji: "🌾", color: "#00c875" },
   judaica: { label: "יודאיקה", emoji: "🏺", color: "#a358df" },
-  sport: { label: "ספורט", emoji: "🏃", color: "#fdab3d" },
-  flute: { label: "חליל", emoji: "🎵", color: "#5b6ef5" },
   couple: { label: "זוגיות", emoji: "❤️", color: "#e2445c" },
   general: { label: "כללי", emoji: "➕", color: "#7a8499" },
 };
 const topicOf = (t) => TOPICS[t] || TOPICS.general;
+
+// תחביבים קבועים — קוביות עם שעה ומשך, לחיצה = בוצע
+const HOBBIES = [
+  { id: "sport", label: "ספורט", emoji: "🏃", color: "#fdab3d", time: "19:00", dur: "15 דק׳" },
+  { id: "flute", label: "חליל אירי", emoji: "🎵", color: "#5b6ef5", time: "19:00", dur: "15 דק׳" },
+];
 
 // תדירויות משימה קבועה
 const REPEATS = { once: "חד-פעמית", daily: "🔁 יומי", weekly: "🔁 שבועי", monthly: "🔁 חודשי" };
@@ -194,6 +198,10 @@ function App() {
   const [newTopic, setNewTopic] = useState("general");
   const [newRepeat, setNewRepeat] = useState("once");
   const [topicFilter, setTopicFilter] = useState("all");
+  // יומן חודשי
+  const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [calDay, setCalDay] = useState(null); // היום שנבחר (iso)
+  const [calNewTask, setCalNewTask] = useState("");
   const [toast, setToast] = useState(null);
   const [voiceOn, setVoiceOn] = useState(true);
   const [spoke, setSpoke] = useState(false);
@@ -327,6 +335,28 @@ function App() {
     return "#e2445c"; // 4+ עמוס מאוד
   };
   const loadText = (count) => (count >= 3 ? "#ffffff" : C.text);
+
+  // ----- יומן חודשי -----
+  const heMonths = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+  const tasksOnDay = (iso) => tasks.filter((t) => t.due === iso);
+  const buildMonth = () => {
+    const y = calMonth.getFullYear(), m = calMonth.getMonth();
+    const first = new Date(y, m, 1);
+    const startPad = first.getDay(); // 0=ראשון
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startPad; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      cells.push({ d, iso, count: tasksOnDay(iso).filter((t) => t.status !== "done").length, isToday: iso === tk });
+    }
+    return cells;
+  };
+  const addTaskOnDay = (iso) => {
+    const v = calNewTask.trim(); if (!v) return;
+    setTasks((p) => [...p, { id: "u" + Date.now(), title: v, due: iso, cat: "כללי", topic: "general", repeat: "once", prio: "med", status: "todo", owner: "בני", steps: [], feedback: [] }]);
+    setCalNewTask(""); showToast("נוספה משימה לתאריך.");
+  };
 
   /* ----- קול ----- */
   const speak = (text) => {
@@ -598,7 +628,7 @@ function App() {
       </div>
 
       <nav style={S.tabs}>
-        {[["home", "בית"], ["chat", "צ׳אט"], ["board", "לוח"], ["trip", "מצב טיול"], ["focus", "🎧 פוקוס"], ["patterns", "דפוסים"]].map(([k, l]) => (
+        {[["home", "בית"], ["chat", "צ׳אט"], ["cal", "📅 יומן"], ["board", "לוח"], ["trip", "מצב טיול"], ["focus", "🎧 פוקוס"], ["patterns", "דפוסים"]].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...S.tab, ...(tab === k ? S.tabActive : {}) }}>{l}</button>
         ))}
       </nav>
@@ -635,6 +665,25 @@ function App() {
                 </div>
               ))}
             </div>
+          </section>
+
+          <section style={S.hobbyRow}>
+            {HOBBIES.map((h) => {
+              const key = "hobby-" + h.id;
+              const done = (habitLog[tk] || {})[key];
+              return (
+                <button key={h.id} onClick={() => toggleHabit(key)}
+                  style={{ ...S.hobbyCube, borderColor: done ? h.color : C.line, background: done ? h.color + "14" : C.panel }}>
+                  <div style={S.hobbyTop}>
+                    <span style={S.hobbyEmoji}>{h.emoji}</span>
+                    <span style={{ ...S.hobbyCheck, background: done ? h.color : "transparent", borderColor: done ? h.color : C.line, color: done ? "#fff" : "transparent" }}>✓</span>
+                  </div>
+                  <div style={{ ...S.hobbyLabel, color: h.color }}>{h.label}</div>
+                  <div style={S.hobbyMeta}>{h.time} · {h.dur}</div>
+                  <div style={{ ...S.hobbyStatus, color: done ? h.color : C.dim }}>{done ? "בוצע היום ✓" : "לחץ כשתסיים"}</div>
+                </button>
+              );
+            })}
           </section>
 
           <div style={S.grid} className="grid">
@@ -867,6 +916,66 @@ function App() {
 
           <div style={S.tripNote}>כרגע המעקב והתגובה פנימיים לעוזרת. בשלב הבא נחבר את זה ל<b>אתר ניהול החווה</b> כך שגיא ואליק יראו את הדחיפות שלך, ואתה תראה בזמן אמת מה הם סגרו — גם מהטיול.</div>
         </section>
+      )}
+
+      {tab === "cal" && (
+        <section style={{ marginTop: 24 }}>
+          <div style={S.calHead}>
+            <button style={S.calNav} onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))}>‹</button>
+            <div style={S.calMonthTitle}>{heMonths[calMonth.getMonth()]} {calMonth.getFullYear()}</div>
+            <button style={S.calNav} onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1))}>›</button>
+          </div>
+          <div style={S.calWeekDays}>
+            {["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"].map((d) => <div key={d} style={S.calWeekDay}>{d}</div>)}
+          </div>
+          <div style={S.calGrid}>
+            {buildMonth().map((cell, i) => cell === null
+              ? <div key={"e" + i} style={S.calEmpty} />
+              : (
+                <button key={cell.iso} onClick={() => setCalDay(cell.iso)}
+                  style={{ ...S.calCell, background: loadColor(cell.count), border: cell.isToday ? "2px solid " + C.accent : "1px solid " + C.line }}>
+                  <span style={{ ...S.calDayNum, color: loadText(cell.count) }}>{cell.d}</span>
+                  {cell.count > 0 && <span style={{ ...S.calDot, color: loadText(cell.count) }}>{cell.count}</span>}
+                </button>
+              )
+            )}
+          </div>
+          <div style={S.calLegend}>אדום חזק = יום עמוס · לחץ על יום לראות ולערוך</div>
+        </section>
+      )}
+
+      {/* חלון יום ביומן */}
+      {calDay && (
+        <div style={S.modalWrap} onClick={() => setCalDay(null)}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={S.modalHead}>
+              <h3 style={S.modalTitle}>{fmtHe(calDay)}</h3>
+              <button style={S.modalX} onClick={() => setCalDay(null)}>✕</button>
+            </div>
+            <div style={S.calDayList}>
+              {tasksOnDay(calDay).length === 0 && <div style={S.calEmpty2}>אין משימות ליום הזה.</div>}
+              {tasksOnDay(calDay).map((t) => (
+                <div key={t.id} style={{ ...S.taskCard, borderRight: "4px solid " + topicOf(t.topic).color, marginBottom: 8 }}>
+                  <div style={S.taskHead}>
+                    <button style={S.check} onClick={() => setStatus(t.id, "done")} aria-label="בוצע" />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ ...S.taskTitle, textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.title}</div>
+                      <div style={S.taskMeta}>
+                        <span style={{ ...S.pill, borderColor: topicOf(t.topic).color, color: topicOf(t.topic).color }}>{topicOf(t.topic).emoji} {topicOf(t.topic).label}</span>
+                      </div>
+                    </div>
+                    <button style={S.editBtn} onClick={() => { openEdit(t); setCalDay(null); }}>✎ ערוך</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ ...S.addRow, marginTop: 14 }}>
+              <input style={S.addInput} value={calNewTask} onChange={(e) => setCalNewTask(e.target.value)}
+                placeholder="הוסף משימה ליום זה…" onKeyDown={(e) => e.key === "Enter" && addTaskOnDay(calDay)} />
+              <button style={S.btnAccent} onClick={() => addTaskOnDay(calDay)}>+</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {tab === "focus" && (
@@ -1145,6 +1254,14 @@ const S = {
   weekDayName: { fontSize: 12, fontWeight: 600 },
   weekDayNum: { fontSize: 18, fontWeight: 800, fontFamily: "'Frank Ruhl Libre', serif" },
   weekDayCount: { fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.35)", borderRadius: 8, padding: "0 6px", marginTop: 2 },
+  hobbyRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 4 },
+  hobbyCube: { border: "2px solid " + C.line, borderRadius: 16, padding: 16, textAlign: "right", cursor: "pointer", background: C.panel, boxShadow: "0 1px 3px rgba(20,30,60,0.06)", display: "flex", flexDirection: "column", gap: 4 },
+  hobbyTop: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  hobbyEmoji: { fontSize: 26 },
+  hobbyCheck: { width: 26, height: 26, borderRadius: 8, border: "2px solid", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800 },
+  hobbyLabel: { fontSize: 16, fontWeight: 700, marginTop: 4 },
+  hobbyMeta: { fontSize: 14, color: C.text, fontWeight: 600 },
+  hobbyStatus: { fontSize: 12, marginTop: 2 },
   topicPick: { background: "transparent", border: "1px solid " + C.line, borderRadius: 18, padding: "5px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   filterRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid " + C.line },
   filterChip: { background: "transparent", border: "1px solid " + C.line, color: C.dim, borderRadius: 18, padding: "6px 13px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
@@ -1241,6 +1358,19 @@ const S = {
   chatInputRow: { display: "flex", gap: 10 },
   chatInput: { flex: 1, background: C.panel, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "12px 14px", outline: "none" },
   modalWrap: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 },
+  calHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  calMonthTitle: { fontSize: 20, fontWeight: 800, color: C.text, fontFamily: "'Frank Ruhl Libre', serif" },
+  calNav: { background: C.panel, border: "1px solid " + C.line, color: C.text, borderRadius: 10, width: 40, height: 40, fontSize: 22, cursor: "pointer", boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  calWeekDays: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 6 },
+  calWeekDay: { textAlign: "center", fontSize: 12, fontWeight: 700, color: C.dim },
+  calGrid: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6 },
+  calEmpty: { aspectRatio: "1", borderRadius: 10 },
+  calCell: { aspectRatio: "1", borderRadius: 10, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: 0, position: "relative" },
+  calDayNum: { fontSize: 15, fontWeight: 700 },
+  calDot: { fontSize: 10, fontWeight: 800, background: "rgba(255,255,255,0.4)", borderRadius: 7, padding: "0 5px" },
+  calLegend: { fontSize: 12, color: C.dim, textAlign: "center", marginTop: 14 },
+  calDayList: { marginBottom: 4 },
+  calEmpty2: { fontSize: 14, color: C.dim, textAlign: "center", padding: "16px 0" },
   modal: { background: C.panel, border: "1px solid " + C.line, borderRadius: 18, padding: 22, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto" },
   modalHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 },
   modalTitle: { fontSize: 18, fontWeight: 700, marginTop: 2 },
