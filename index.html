@@ -115,8 +115,7 @@ const topicOf = (t) => TOPICS[t] || TOPICS.general;
 
 // תחביבים קבועים — קוביות עם שעה ומשך, לחיצה = בוצע
 const HOBBIES = [
-  { id: "sport", label: "ספורט", emoji: "🏃", color: "#fdab3d", time: "19:00", dur: "15 דק׳" },
-  { id: "flute", label: "חליל אירי", emoji: "🎵", color: "#5b6ef5", time: "19:00", dur: "15 דק׳" },
+  { id: "flute", label: "חליל אירי", emoji: "🎵", color: "#5b6ef5", note: "בערב, אחרי העבודה" },
 ];
 
 // טקס בוקר — אופציה ג' (טבע וחווה). שעות גמישות בינתיים.
@@ -841,7 +840,7 @@ function App() {
                     <span style={{ ...S.hobbyCheck, background: done ? h.color : "transparent", borderColor: done ? h.color : C.line, color: done ? "#fff" : "transparent" }}>✓</span>
                   </div>
                   <div style={{ ...S.hobbyLabel, color: h.color }}>{h.label}</div>
-                  <div style={S.hobbyMeta}>{h.time} · {h.dur}</div>
+                  <div style={S.hobbyMeta}>{h.note}</div>
                   <div style={{ ...S.hobbyStatus, color: done ? h.color : C.dim }}>{done ? "בוצע היום ✓" : "לחץ כשתסיים"}</div>
                 </button>
               );
@@ -1602,7 +1601,7 @@ const S = {
   weekDayName: { fontSize: 12, fontWeight: 600 },
   weekDayNum: { fontSize: 18, fontWeight: 800, fontFamily: "'Frank Ruhl Libre', serif" },
   weekDayCount: { fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.35)", borderRadius: 8, padding: "0 6px", marginTop: 2 },
-  hobbyRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 4 },
+  hobbyRow: { display: "grid", gridTemplateColumns: "1fr", gap: 12, marginTop: 12, marginBottom: 4 },
   morningCube: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 16, marginTop: 12, marginBottom: 4, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
   ritualCube: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: "14px 16px", marginTop: 12, marginBottom: 4, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
   ritualHead: { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "transparent", border: "none", cursor: "pointer", padding: 0 },
