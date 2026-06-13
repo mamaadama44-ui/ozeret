@@ -202,6 +202,10 @@ function App() {
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [calDay, setCalDay] = useState(null); // היום שנבחר (iso)
   const [calNewTask, setCalNewTask] = useState("");
+  // סיכומים
+  const [sumPeriod, setSumPeriod] = useState("day"); // day | week | month
+  const [sumFeedback, setSumFeedback] = useState("");
+  const [sumBusy, setSumBusy] = useState(false);
   const [toast, setToast] = useState(null);
   const [voiceOn, setVoiceOn] = useState(true);
   const [spoke, setSpoke] = useState(false);
@@ -358,6 +362,30 @@ function App() {
     setCalNewTask(""); showToast("נוספה משימה לתאריך.");
   };
 
+  // ----- סיכומים -----
+  const periodStart = (period) => {
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    if (period === "day") return d;
+    if (period === "week") { const x = new Date(d); x.setDate(d.getDate() - 6); return x; }
+    const x = new Date(d); x.setDate(d.getDate() - 29); return x; // חודש = 30 יום אחורה
+  };
+  const buildSummary = (period) => {
+    const start = periodStart(period);
+    const inRange = (iso) => { if (!iso) return false; const dt = new Date(iso); return dt >= start; };
+    // הושלמו בתקופה (לפי doneAt אם קיים, אחרת due)
+    const done = tasks.filter((t) => t.status === "done" && (inRange(t.doneAt) || inRange(t.due)));
+    const open = tasks.filter((t) => t.status !== "done");
+    const overdue = open.filter((t) => t.due && daysUntil(t.due) < 0);
+    // פילוח לפי נושא
+    const byTopic = {};
+    done.forEach((t) => { const k = t.topic || "general"; byTopic[k] = (byTopic[k] || 0) + 1; });
+    // פילוח לפי בעלים (מי עשה מה)
+    const byOwner = {};
+    done.forEach((t) => { const k = t.owner || "בני"; byOwner[k] = (byOwner[k] || 0) + 1; });
+    return { done, open, overdue, byTopic, byOwner };
+  };
+  const periodLabel = { day: "היום", week: "השבוע", month: "החודש" };
+
   /* ----- קול ----- */
   const speak = (text) => {
     if (!("speechSynthesis" in window)) { showToast("הקול לא נתמך בדפדפן הזה"); return; }
@@ -423,6 +451,29 @@ function App() {
   };
   const toggleStep = (taskId, stepId) =>
     setTasks((p) => p.map((t) => t.id === taskId ? { ...t, steps: t.steps.map((s) => s.id === stepId ? { ...s, done: !s.done } : s) } : t));
+
+  // משוב AI על הסיכום
+  const getSummaryFeedback = async () => {
+    setSumBusy(true); setSumFeedback("");
+    try {
+      const s = buildSummary(sumPeriod);
+      const topicLines = Object.entries(s.byTopic).map(([k, n]) => topicOf(k).label + ": " + n).join(", ") || "אין";
+      const ownerLines = Object.entries(s.byOwner).map(([k, n]) => k + ": " + n).join(", ") || "אין";
+      const prompt =
+        'אתה אולגה — עוזרת אישית חמה, ישירה ומדרבנת של בני, מנהל חווה חינוכית בישראל.\n' +
+        'הנה סיכום הפעילות של ' + periodLabel[sumPeriod] + ':\n' +
+        '- משימות שהושלמו: ' + s.done.length + '\n' +
+        '- משימות פתוחות: ' + s.open.length + '\n' +
+        '- משימות באיחור: ' + s.overdue.length + '\n' +
+        '- הושלמו לפי נושא: ' + topicLines + '\n' +
+        '- מי ביצע: ' + ownerLines + '\n\n' +
+        'תן משוב קצר (3-4 משפטים) בעברית: מה הלך טוב, על מה לשים לב, והמלצה אחת קונקרטית להמשך. דברי בגוף ראשון, חם אבל כן.';
+      const text = await callAI(prompt, apiKey);
+      setSumFeedback(text);
+    } catch (e) {
+      setSumFeedback(e.message === "no-key" ? "צריך מפתח AI — פתח 'חיבור AI' בתחתית מסך הבית." : "לא הצלחתי לנתח כרגע. נסה שוב.");
+    } finally { setSumBusy(false); }
+  };
 
   /* ----- משוב ----- */
   const openFeedback = (task) => { setFbTask(task); setFbText(""); setFbReply(null); };
@@ -546,6 +597,32 @@ function App() {
     showToast("המשימה נמחקה.");
   };
 
+  // הוספה ליומן הטלפון — יוצר קובץ ICS שהטלפון פותח ומוסיף עם תזכורת
+  const addToCalendar = (task) => {
+    if (!task.due) { showToast("קודם הוסף תאריך למשימה (בעריכה)."); return; }
+    const d = task.due.replace(/-/g, ""); // YYYYMMDD
+    const dtStart = d; // אירוע של יום שלם
+    const dObj = new Date(task.due); dObj.setDate(dObj.getDate() + 1);
+    const dtEnd = dObj.getFullYear() + String(dObj.getMonth() + 1).padStart(2, "0") + String(dObj.getDate()).padStart(2, "0");
+    const uid = "olga-" + (task.id || Date.now()) + "@olga";
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    const ics = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Olga//HE", "CALSCALE:GREGORIAN",
+      "BEGIN:VEVENT", "UID:" + uid, "DTSTAMP:" + stamp,
+      "DTSTART;VALUE=DATE:" + dtStart, "DTEND;VALUE=DATE:" + dtEnd,
+      "SUMMARY:" + task.title,
+      "BEGIN:VALARM", "TRIGGER:-PT9H", "ACTION:DISPLAY", "DESCRIPTION:" + task.title, "END:VALARM",
+      "END:VEVENT", "END:VCALENDAR",
+    ].join("\r\n");
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = (task.title || "task").slice(0, 20) + ".ics";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("📅 נפתח — אשר הוספה ליומן הטלפון.");
+  };
+
   // ----- שליחה לאפליקציית החווה (כיוון אחד, בלחיצה) -----
   const [farmSending, setFarmSending] = useState(false);
   // תרגום דחיפות: אישי -> חווה
@@ -628,13 +705,26 @@ function App() {
       </div>
 
       <nav style={S.tabs}>
-        {[["home", "בית"], ["chat", "צ׳אט"], ["cal", "📅 יומן"], ["board", "לוח"], ["trip", "מצב טיול"], ["focus", "🎧 פוקוס"], ["patterns", "דפוסים"]].map(([k, l]) => (
+        {[["home", "בית"], ["chat", "צ׳אט"], ["cal", "📅 יומן"], ["summary", "📊 סיכומים"], ["board", "לוח"], ["trip", "מצב טיול"], ["focus", "🎧 פוקוס"], ["patterns", "דפוסים"]].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...S.tab, ...(tab === k ? S.tabActive : {}) }}>{l}</button>
         ))}
       </nav>
 
       {tab === "home" && (
         <React.Fragment>
+          {(() => {
+            const todays = tasks.filter((t) => t.due === tk && t.status !== "done");
+            if (todays.length === 0) return null;
+            return (
+              <section style={S.todayBanner}>
+                <div style={S.todayBannerTop}>
+                  <span style={S.todayBannerIcon}>📅</span>
+                  <span style={S.todayBannerTitle}>היום יש לך {todays.length} {todays.length === 1 ? "משימה" : "משימות"}</span>
+                </div>
+                <div style={S.todayBannerList}>{todays.slice(0, 4).map((t) => t.title).join(" · ")}{todays.length > 4 ? " ועוד…" : ""}</div>
+              </section>
+            );
+          })()}
           {checkedInDay !== tk ? (
             <section style={S.checkin}>
               <div style={S.greeting}>{greeting}</div>
@@ -918,6 +1008,81 @@ function App() {
         </section>
       )}
 
+      {tab === "summary" && (() => {
+        const s = buildSummary(sumPeriod);
+        const total = s.done.length + s.open.length;
+        const pct = total > 0 ? Math.round((s.done.length / total) * 100) : 0;
+        return (
+          <section style={{ marginTop: 24 }}>
+            <div style={S.tripHead}>
+              <div><div style={S.eyebrow}>מבט אחורה</div><h2 style={S.tripH2}>הסיכומים שלך</h2></div>
+            </div>
+            <div style={S.sumPeriodRow}>
+              {[["day", "יום"], ["week", "שבוע"], ["month", "חודש"]].map(([k, l]) => (
+                <button key={k} onClick={() => { setSumPeriod(k); setSumFeedback(""); }}
+                  style={{ ...S.sumPeriodBtn, ...(sumPeriod === k ? { background: C.accent, color: "#fff", borderColor: C.accent } : {}) }}>{l}</button>
+              ))}
+            </div>
+
+            <div style={S.sumStatsRow}>
+              <div style={{ ...S.sumStat, borderTop: "3px solid " + C.good }}>
+                <div style={{ ...S.sumStatNum, color: C.good }}>{s.done.length}</div>
+                <div style={S.sumStatLabel}>הושלמו</div>
+              </div>
+              <div style={{ ...S.sumStat, borderTop: "3px solid " + C.accent }}>
+                <div style={{ ...S.sumStatNum, color: C.accent }}>{s.open.length}</div>
+                <div style={S.sumStatLabel}>פתוחות</div>
+              </div>
+              <div style={{ ...S.sumStat, borderTop: "3px solid " + C.danger }}>
+                <div style={{ ...S.sumStatNum, color: C.danger }}>{s.overdue.length}</div>
+                <div style={S.sumStatLabel}>באיחור</div>
+              </div>
+            </div>
+
+            <div style={S.sumProgWrap}>
+              <div style={S.sumProgTop}><span>אחוז השלמה {periodLabel[sumPeriod]}</span><span style={{ fontWeight: 800, color: C.good }}>{pct}%</span></div>
+              <div style={S.sumProgBar}><div style={{ ...S.sumProgFill, width: pct + "%" }} /></div>
+            </div>
+
+            {Object.keys(s.byTopic).length > 0 && (
+              <div style={S.sumBlock}>
+                <div style={S.sumBlockTitle}>מה נעשה — לפי נושא</div>
+                {Object.entries(s.byTopic).map(([k, n]) => (
+                  <div key={k} style={S.sumLine}>
+                    <span style={{ ...S.pill, borderColor: topicOf(k).color, color: topicOf(k).color }}>{topicOf(k).emoji} {topicOf(k).label}</span>
+                    <span style={S.sumLineNum}>{n}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {Object.keys(s.byOwner).length > 0 && (
+              <div style={S.sumBlock}>
+                <div style={S.sumBlockTitle}>מי עשה מה</div>
+                {Object.entries(s.byOwner).map(([k, n]) => (
+                  <div key={k} style={S.sumLine}>
+                    <span style={S.sumOwner}>{k}</span>
+                    <span style={S.sumLineNum}>{n}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button style={{ ...S.btnAccent, width: "100%", marginTop: 18, opacity: sumBusy ? 0.6 : 1 }}
+              disabled={sumBusy} onClick={getSummaryFeedback}>
+              {sumBusy ? "אולגה חושבת…" : "🤖 קבל משוב מאולגה"}
+            </button>
+
+            {sumFeedback && (
+              <div style={S.sumFeedback}>
+                <div style={S.sumFeedbackTitle}>💬 המשוב של אולגה</div>
+                <div style={S.sumFeedbackText}>{sumFeedback}</div>
+              </div>
+            )}
+          </section>
+        );
+      })()}
+
       {tab === "cal" && (
         <section style={{ marginTop: 24 }}>
           <div style={S.calHead}>
@@ -1154,6 +1319,8 @@ function App() {
             <input style={S.editInput} value={editTask.cat || ""}
               onChange={(e) => setEditTask({ ...editTask, cat: e.target.value })} placeholder="טיסה / פרויקט / כללי…" />
 
+            <button style={S.calAddBtn} onClick={() => addToCalendar(editTask)}>📅 הוסף ליומן הטלפון (עם תזכורת)</button>
+
             {/* ----- משימת חווה ----- */}
             {farmReady && (
               <div style={S.farmBox}>
@@ -1246,6 +1413,12 @@ const S = {
   topicPickRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 },
   addHint: { fontSize: 12.5, color: C.dim, marginBottom: 14, marginTop: -4 },
   weekCube: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 16, marginTop: 22, marginBottom: 4, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  todayBanner: { background: "linear-gradient(135deg, #fff1e6, #ffe0e6)", border: "1px solid #ffd0c0", borderRadius: 16, padding: "14px 18px", marginBottom: 4 },
+  calAddBtn: { width: "100%", marginTop: 14, background: "rgba(91,110,245,0.08)", border: "1px solid " + C.accent, color: C.accent, borderRadius: 12, padding: "12px", fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  todayBannerTop: { display: "flex", alignItems: "center", gap: 8 },
+  todayBannerIcon: { fontSize: 20 },
+  todayBannerTitle: { fontSize: 16, fontWeight: 800, color: "#c0392b" },
+  todayBannerList: { fontSize: 13, color: "#8a4a3a", marginTop: 6, lineHeight: 1.5 },
   weekHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   weekTitle: { fontSize: 16, fontWeight: 700, color: C.text },
   weekHint: { fontSize: 12, color: C.dim },
@@ -1359,6 +1532,24 @@ const S = {
   chatInput: { flex: 1, background: C.panel, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "12px 14px", outline: "none" },
   modalWrap: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 },
   calHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  sumPeriodRow: { display: "flex", gap: 8, marginBottom: 18 },
+  sumPeriodBtn: { flex: 1, background: C.panel, border: "1px solid " + C.line, color: C.text, borderRadius: 12, padding: "10px", fontSize: 15, fontWeight: 700, cursor: "pointer" },
+  sumStatsRow: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 },
+  sumStat: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: "16px 8px", textAlign: "center", boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  sumStatNum: { fontSize: 30, fontWeight: 800, fontFamily: "'Frank Ruhl Libre', serif" },
+  sumStatLabel: { fontSize: 12, color: C.dim, marginTop: 2 },
+  sumProgWrap: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: 16, marginBottom: 16, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  sumProgTop: { display: "flex", justifyContent: "space-between", fontSize: 13, color: C.dim, marginBottom: 8 },
+  sumProgBar: { height: 10, background: C.panel2, borderRadius: 6, overflow: "hidden" },
+  sumProgFill: { height: "100%", background: "linear-gradient(90deg, #3ee08a, #00c875)", borderRadius: 6, transition: "width .4s" },
+  sumBlock: { background: C.panel, border: "1px solid " + C.line, borderRadius: 14, padding: 16, marginBottom: 12, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  sumBlockTitle: { fontSize: 13, fontWeight: 700, color: C.dim, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 },
+  sumLine: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" },
+  sumLineNum: { fontSize: 18, fontWeight: 800, color: C.text },
+  sumOwner: { fontSize: 15, fontWeight: 600, color: C.text },
+  sumFeedback: { background: "linear-gradient(135deg, #fff1e6, #ffe0e6)", border: "1px solid #ffd0c0", borderRadius: 16, padding: 18, marginTop: 16 },
+  sumFeedbackTitle: { fontSize: 15, fontWeight: 800, color: "#c0392b", marginBottom: 8 },
+  sumFeedbackText: { fontSize: 14.5, color: "#5a3a30", lineHeight: 1.7, whiteSpace: "pre-wrap" },
   calMonthTitle: { fontSize: 20, fontWeight: 800, color: C.text, fontFamily: "'Frank Ruhl Libre', serif" },
   calNav: { background: C.panel, border: "1px solid " + C.line, color: C.text, borderRadius: 10, width: 40, height: 40, fontSize: 22, cursor: "pointer", boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
   calWeekDays: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 6 },
