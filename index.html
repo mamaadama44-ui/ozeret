@@ -131,6 +131,15 @@ const MORNING = [
   { id: "out", emoji: "🚜", label: "יציאה לעבודה" },
 ];
 
+// טקס ערב — מבוסס על "טקס סגירה" (Cal Newport): לסכם, להוסיף, לתכנן מחר
+const EVENING = [
+  { id: "review", emoji: "🌙", label: "סיכום היום — מה הושלם" },
+  { id: "open", emoji: "✍️", label: "מה נשאר פתוח" },
+  { id: "top3", emoji: "📋", label: "3 הדברים החשובים למחר" },
+  { id: "tidy", emoji: "🧹", label: "סגירת קצוות" },
+  { id: "close", emoji: "😌", label: "משפט סגירה — סיימנו להיום" },
+];
+
 // תדירויות משימה קבועה
 const REPEATS = { once: "חד-פעמית", daily: "🔁 יומי", weekly: "🔁 שבועי", monthly: "🔁 חודשי" };
 const repeatLabel = (r) => REPEATS[r] || REPEATS.once;
@@ -218,6 +227,8 @@ function App() {
   const [sumPeriod, setSumPeriod] = useState("day"); // day | week | month
   const [sumFeedback, setSumFeedback] = useState("");
   const [sumBusy, setSumBusy] = useState(false);
+  const [morningOpen, setMorningOpen] = useState(false);
+  const [eveningOpen, setEveningOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [voiceOn, setVoiceOn] = useState(true);
   const [spoke, setSpoke] = useState(false);
@@ -812,36 +823,82 @@ function App() {
             const todayLog = habitLog[tk] || {};
             const doneSteps = MORNING.filter((m) => todayLog["morning-" + m.id]).length;
             const allDone = doneSteps === MORNING.length;
-            // חישוב רצף ימים שבהם הושלם כל הטקס
             let streak = 0;
             for (let i = 0; i < 60; i++) {
               const d = new Date(); d.setDate(d.getDate() - i);
-              const key = isoOf(d);
-              const log = habitLog[key] || {};
+              const log = habitLog[isoOf(d)] || {};
               const full = MORNING.every((m) => log["morning-" + m.id]);
               if (full) streak++; else { if (i === 0) continue; break; }
             }
             return (
-              <section style={S.morningCube}>
-                <div style={S.morningHead}>
+              <section style={S.ritualCube}>
+                <button style={S.ritualHead} onClick={() => setMorningOpen((o) => !o)}>
                   <span style={S.morningTitle}>🌅 טקס בוקר</span>
-                  <span style={S.morningProg}>{doneSteps}/{MORNING.length}{streak > 0 ? " · 🔥 " + streak + " ימים" : ""}</span>
-                </div>
-                {allDone && <div style={S.morningDone}>כל הכבוד! התחלת את היום נכון 🌞</div>}
-                <div style={S.morningSteps}>
-                  {MORNING.map((m, i) => {
-                    const key = "morning-" + m.id;
-                    const done = todayLog[key];
-                    return (
-                      <button key={m.id} onClick={() => toggleHabit(key)}
-                        style={{ ...S.morningStep, background: done ? "rgba(0,200,117,0.10)" : C.panel, borderColor: done ? C.good : C.line }}>
-                        <span style={S.morningStepEmoji}>{m.emoji}</span>
-                        <span style={{ ...S.morningStepLabel, textDecoration: done ? "line-through" : "none", color: done ? C.dim : C.text }}>{m.label}</span>
-                        <span style={{ ...S.morningCheck, background: done ? C.good : "transparent", borderColor: done ? C.good : C.line, color: done ? "#fff" : "transparent" }}>✓</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                  <span style={S.ritualHeadRight}>
+                    <span style={S.morningProg}>{doneSteps}/{MORNING.length}{streak > 0 ? " · 🔥 " + streak : ""}</span>
+                    <span style={S.ritualArrow}>{morningOpen ? "▲" : "▼"}</span>
+                  </span>
+                </button>
+                {morningOpen && (
+                  <div style={{ marginTop: 12 }}>
+                    {allDone && <div style={S.morningDone}>כל הכבוד! התחלת את היום נכון 🌞</div>}
+                    <div style={S.morningSteps}>
+                      {MORNING.map((m) => {
+                        const key = "morning-" + m.id; const done = todayLog[key];
+                        return (
+                          <button key={m.id} onClick={() => toggleHabit(key)}
+                            style={{ ...S.morningStep, background: done ? "rgba(0,200,117,0.10)" : C.panel, borderColor: done ? C.good : C.line }}>
+                            <span style={S.morningStepEmoji}>{m.emoji}</span>
+                            <span style={{ ...S.morningStepLabel, textDecoration: done ? "line-through" : "none", color: done ? C.dim : C.text }}>{m.label}</span>
+                            <span style={{ ...S.morningCheck, background: done ? C.good : "transparent", borderColor: done ? C.good : C.line, color: done ? "#fff" : "transparent" }}>✓</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </section>
+            );
+          })()}
+
+          {(() => {
+            const todayLog = habitLog[tk] || {};
+            const doneSteps = EVENING.filter((m) => todayLog["evening-" + m.id]).length;
+            const allDone = doneSteps === EVENING.length;
+            let streak = 0;
+            for (let i = 0; i < 60; i++) {
+              const d = new Date(); d.setDate(d.getDate() - i);
+              const log = habitLog[isoOf(d)] || {};
+              const full = EVENING.every((m) => log["evening-" + m.id]);
+              if (full) streak++; else { if (i === 0) continue; break; }
+            }
+            return (
+              <section style={S.ritualCube}>
+                <button style={S.ritualHead} onClick={() => setEveningOpen((o) => !o)}>
+                  <span style={S.morningTitle}>🌙 טקס ערב</span>
+                  <span style={S.ritualHeadRight}>
+                    <span style={{ ...S.morningProg, color: C.accent }}>{doneSteps}/{EVENING.length}{streak > 0 ? " · 🔥 " + streak : ""}</span>
+                    <span style={S.ritualArrow}>{eveningOpen ? "▲" : "▼"}</span>
+                  </span>
+                </button>
+                {eveningOpen && (
+                  <div style={{ marginTop: 12 }}>
+                    {allDone && <div style={{ ...S.morningDone, color: C.accent }}>סגרת את היום יפה. מחר מתוכנן 🌟</div>}
+                    <div style={S.morningSteps}>
+                      {EVENING.map((m) => {
+                        const key = "evening-" + m.id; const done = todayLog[key];
+                        return (
+                          <button key={m.id} onClick={() => toggleHabit(key)}
+                            style={{ ...S.morningStep, background: done ? "rgba(91,110,245,0.10)" : C.panel, borderColor: done ? C.accent : C.line }}>
+                            <span style={S.morningStepEmoji}>{m.emoji}</span>
+                            <span style={{ ...S.morningStepLabel, textDecoration: done ? "line-through" : "none", color: done ? C.dim : C.text }}>{m.label}</span>
+                            <span style={{ ...S.morningCheck, background: done ? C.accent : "transparent", borderColor: done ? C.accent : C.line, color: done ? "#fff" : "transparent" }}>✓</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </section>
             );
           })()}
@@ -1522,6 +1579,10 @@ const S = {
   weekDayCount: { fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.35)", borderRadius: 8, padding: "0 6px", marginTop: 2 },
   hobbyRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 4 },
   morningCube: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 16, marginTop: 12, marginBottom: 4, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  ritualCube: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: "14px 16px", marginTop: 12, marginBottom: 4, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  ritualHead: { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "transparent", border: "none", cursor: "pointer", padding: 0 },
+  ritualHeadRight: { display: "flex", alignItems: "center", gap: 10 },
+  ritualArrow: { fontSize: 12, color: C.dim },
   morningHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   morningTitle: { fontSize: 16, fontWeight: 700, color: C.text },
   morningProg: { fontSize: 13, fontWeight: 700, color: C.warn },
