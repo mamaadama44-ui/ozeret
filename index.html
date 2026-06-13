@@ -229,6 +229,8 @@ function App() {
   const [sumBusy, setSumBusy] = useState(false);
   const [morningOpen, setMorningOpen] = useState(false);
   const [eveningOpen, setEveningOpen] = useState(false);
+  const [eveningNotes, setEveningNotes] = useState({}); // { iso: {done, open, top3} }
+  const [eveningBusy, setEveningBusy] = useState(false);
   const [toast, setToast] = useState(null);
   const [voiceOn, setVoiceOn] = useState(true);
   const [spoke, setSpoke] = useState(false);
@@ -269,6 +271,7 @@ function App() {
         if (d.focus && d.focusDay === tk) { setFocus(d.focus); setCheckedInDay(tk); }
         if (typeof d.lastAnalyzedAt === "number") setLastAnalyzedAt(d.lastAnalyzedAt);
         if (d.patterns) setPatterns(d.patterns);
+        if (d.eveningNotes) setEveningNotes(d.eveningNotes);
       }
       setLoaded(true);
     }).catch((e) => { console.warn(e); setLoaded(true); });
@@ -282,10 +285,11 @@ function App() {
       focus: checkedInDay === tk ? focus : "",
       focusDay: checkedInDay === tk ? tk : "",
       lastAnalyzedAt, patterns: patterns || null,
+      eveningNotes,
       updatedAt: new Date().toISOString(),
     };
     DOC_REF().set(payload, { merge: true }).catch((e) => console.warn("save failed", e));
-  }, [tasks, habitLog, focus, checkedInDay, patterns, lastAnalyzedAt, loaded]);
+  }, [tasks, habitLog, focus, checkedInDay, patterns, lastAnalyzedAt, eveningNotes, loaded]);
 
   const saveKey = (v) => {
     setApiKey(v);
@@ -498,7 +502,32 @@ function App() {
     } finally { setSumBusy(false); }
   };
 
-  /* ----- משוב ----- */
+  // עזרת AI לטקס הערב — ממלאת טיוטה לפי המשימות
+  const eveningHelp = async () => {
+    setEveningBusy(true);
+    try {
+      const doneToday = tasks.filter((t) => t.status === "done" && (t.doneAt === tk || t.due === tk)).map((t) => t.title);
+      const openTasks2 = tasks.filter((t) => t.status !== "done");
+      const openTitles = openTasks2.map((t) => t.title);
+      const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return isoOf(d); })();
+      const dueTomorrow = openTasks2.filter((t) => t.due === tomorrow).map((t) => t.title);
+      const prompt =
+        'אתה אולגה — עוזרת אישית חמה וחכמה של בני, מנהל חווה חינוכית.\n' +
+        'עזור לבני בטקס הערב. הנה הנתונים:\n' +
+        '- הושלם היום: ' + (doneToday.join(", ") || "לא סומן כלום") + '\n' +
+        '- משימות פתוחות: ' + (openTitles.slice(0, 15).join(", ") || "אין") + '\n' +
+        '- מתוכנן למחר: ' + (dueTomorrow.join(", ") || "אין") + '\n\n' +
+        'החזר JSON בלבד בלי טקסט נוסף: {"done":"סיכום קצר של מה שהושלם היום","open":"מה נשאר פתוח","top3":"שלושת הדברים החשובים למחר, כל אחד בשורה"}';
+      const text = await callAI(prompt, apiKey);
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      setEveningNotes((p) => ({ ...p, [tk]: { done: parsed.done || "", open: parsed.open || "", top3: parsed.top3 || "" } }));
+      showToast("אולגה מילאה טיוטה — אפשר לערוך.");
+    } catch (e) {
+      showToast(e.message === "no-key" ? "צריך מפתח AI — פתח 'חיבור AI'." : "לא הצלחתי כרגע, נסה שוב.");
+    } finally { setEveningBusy(false); }
+  };
+  const setEveningField = (field, val) => setEveningNotes((p) => ({ ...p, [tk]: { ...(p[tk] || {}), [field]: val } }));
+
   const openFeedback = (task) => { setFbTask(task); setFbText(""); setFbReply(null); };
   const closeFeedback = () => { setFbTask(null); setFbText(""); setFbReply(null); };
   const sendFeedback = async () => {
@@ -862,41 +891,37 @@ function App() {
           })()}
 
           {(() => {
-            const todayLog = habitLog[tk] || {};
-            const doneSteps = EVENING.filter((m) => todayLog["evening-" + m.id]).length;
-            const allDone = doneSteps === EVENING.length;
-            let streak = 0;
-            for (let i = 0; i < 60; i++) {
-              const d = new Date(); d.setDate(d.getDate() - i);
-              const log = habitLog[isoOf(d)] || {};
-              const full = EVENING.every((m) => log["evening-" + m.id]);
-              if (full) streak++; else { if (i === 0) continue; break; }
-            }
+            const notes = eveningNotes[tk] || {};
+            const filled = [notes.done, notes.open, notes.top3].filter((x) => x && x.trim()).length;
             return (
               <section style={S.ritualCube}>
                 <button style={S.ritualHead} onClick={() => setEveningOpen((o) => !o)}>
                   <span style={S.morningTitle}>🌙 טקס ערב</span>
                   <span style={S.ritualHeadRight}>
-                    <span style={{ ...S.morningProg, color: C.accent }}>{doneSteps}/{EVENING.length}{streak > 0 ? " · 🔥 " + streak : ""}</span>
+                    <span style={{ ...S.morningProg, color: C.accent }}>{filled}/3</span>
                     <span style={S.ritualArrow}>{eveningOpen ? "▲" : "▼"}</span>
                   </span>
                 </button>
                 {eveningOpen && (
                   <div style={{ marginTop: 12 }}>
-                    {allDone && <div style={{ ...S.morningDone, color: C.accent }}>סגרת את היום יפה. מחר מתוכנן 🌟</div>}
-                    <div style={S.morningSteps}>
-                      {EVENING.map((m) => {
-                        const key = "evening-" + m.id; const done = todayLog[key];
-                        return (
-                          <button key={m.id} onClick={() => toggleHabit(key)}
-                            style={{ ...S.morningStep, background: done ? "rgba(91,110,245,0.10)" : C.panel, borderColor: done ? C.accent : C.line }}>
-                            <span style={S.morningStepEmoji}>{m.emoji}</span>
-                            <span style={{ ...S.morningStepLabel, textDecoration: done ? "line-through" : "none", color: done ? C.dim : C.text }}>{m.label}</span>
-                            <span style={{ ...S.morningCheck, background: done ? C.accent : "transparent", borderColor: done ? C.accent : C.line, color: done ? "#fff" : "transparent" }}>✓</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <button style={{ ...S.calAddBtn, marginTop: 0, marginBottom: 14, opacity: eveningBusy ? 0.6 : 1 }}
+                      disabled={eveningBusy} onClick={eveningHelp}>
+                      {eveningBusy ? "אולגה כותבת…" : "🤖 תן לאולגה לעזור"}
+                    </button>
+
+                    <label style={S.editLabel}>🌙 מה הושלם היום?</label>
+                    <textarea style={S.eveningArea} value={notes.done || ""} rows={2}
+                      onChange={(e) => setEveningField("done", e.target.value)} placeholder="מה הספקת היום…" />
+
+                    <label style={S.editLabel}>✍️ מה נשאר פתוח?</label>
+                    <textarea style={S.eveningArea} value={notes.open || ""} rows={2}
+                      onChange={(e) => setEveningField("open", e.target.value)} placeholder="מה לא הספקת…" />
+
+                    <label style={S.editLabel}>📋 3 הדברים החשובים למחר</label>
+                    <textarea style={S.eveningArea} value={notes.top3 || ""} rows={3}
+                      onChange={(e) => setEveningField("top3", e.target.value)} placeholder="1. …&#10;2. …&#10;3. …" />
+
+                    <div style={S.eveningClose}>😌 סיימנו להיום. מחר מתוכנן.</div>
                   </div>
                 )}
               </section>
@@ -1583,6 +1608,8 @@ const S = {
   ritualHead: { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "transparent", border: "none", cursor: "pointer", padding: 0 },
   ritualHeadRight: { display: "flex", alignItems: "center", gap: 10 },
   ritualArrow: { fontSize: 12, color: C.dim },
+  eveningArea: { width: "100%", background: C.panel2, border: "1px solid " + C.line, color: C.text, borderRadius: 10, padding: "10px 12px", outline: "none", resize: "vertical", fontFamily: "inherit", fontSize: 15, marginBottom: 6 },
+  eveningClose: { textAlign: "center", fontSize: 14, color: C.accent, fontWeight: 600, marginTop: 10, padding: "8px", background: "rgba(91,110,245,0.06)", borderRadius: 10 },
   morningHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   morningTitle: { fontSize: 16, fontWeight: 700, color: C.text },
   morningProg: { fontSize: 13, fontWeight: 700, color: C.warn },
