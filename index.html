@@ -612,22 +612,7 @@ function App() {
                   placeholder="הוסף משימה…" onKeyDown={(e) => e.key === "Enter" && addTask()} />
                 <button style={S.btnAccent} onClick={addTask}>+</button>
               </div>
-              <div style={S.topicPickRow}>
-                {Object.entries(TOPICS).map(([k, t]) => (
-                  <button key={k} onClick={() => setNewTopic(k)}
-                    style={{ ...S.topicPick, ...(newTopic === k ? { background: t.color, color: "#fff", borderColor: t.color } : { color: t.color, borderColor: t.color }) }}>
-                    {t.emoji} {t.label}
-                  </button>
-                ))}
-              </div>
-              <div style={S.topicPickRow}>
-                {Object.entries(REPEATS).map(([k, l]) => (
-                  <button key={k} onClick={() => setNewRepeat(k)}
-                    style={{ ...S.topicPick, ...(newRepeat === k ? { background: C.accent, color: "#fff", borderColor: C.accent } : { color: C.dim }) }}>
-                    {l}
-                  </button>
-                ))}
-              </div>
+              <div style={S.addHint}>הוסף משימה, ואז ✎ כדי לבחור נושא, תדירות, תאריך ועוד.</div>
               <div style={S.filterRow}>
                 <button onClick={() => setTopicFilter("all")}
                   style={{ ...S.filterChip, ...(topicFilter === "all" ? { background: C.text, color: "#fff", borderColor: C.text } : {}) }}>הכל</button>
@@ -1104,6 +1089,7 @@ const S = {
   nextMeta: { marginTop: 8, fontSize: 13 },
   addRow: { display: "flex", gap: 8, marginBottom: 10 },
   topicPickRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 },
+  addHint: { fontSize: 12.5, color: C.dim, marginBottom: 14, marginTop: -4 },
   topicPick: { background: "transparent", border: "1px solid " + C.line, borderRadius: 18, padding: "5px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   filterRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid " + C.line },
   filterChip: { background: "transparent", border: "1px solid " + C.line, color: C.dim, borderRadius: 18, padding: "6px 13px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
