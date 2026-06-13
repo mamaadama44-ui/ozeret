@@ -298,6 +298,32 @@ function App() {
   const homeTasksRaw = showAllTasks ? sortedOpen : todayTasks;
   const homeTasks = topicFilter === "all" ? homeTasksRaw : homeTasksRaw.filter((t) => (t.topic || "general") === topicFilter);
 
+  // ----- יומן שבועי: שבעה ימים קדימה + עומס לכל יום -----
+  const weekDayNames = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
+  const isoOf = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const buildWeek = () => {
+    const out = [];
+    const base = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(base);
+      d.setDate(base.getDate() + i);
+      const iso = isoOf(d);
+      const count = openTasks.filter((t) => t.due === iso).length;
+      out.push({ iso, count, dayName: weekDayNames[d.getDay()], dayNum: d.getDate(), isToday: i === 0 });
+    }
+    return out;
+  };
+  const weekDays = buildWeek();
+  // עוצמת אדום לפי עומס: 0=אין, ועד 4+ עמוס מאוד
+  const loadColor = (count) => {
+    if (count <= 0) return C.panel2;
+    if (count === 1) return "#fde0e4";
+    if (count === 2) return "#f9b8c1";
+    if (count === 3) return "#f2818f";
+    return "#e2445c"; // 4+ עמוס מאוד
+  };
+  const loadText = (count) => (count >= 3 ? "#ffffff" : C.text);
+
   /* ----- קול ----- */
   const speak = (text) => {
     if (!("speechSynthesis" in window)) { showToast("הקול לא נתמך בדפדפן הזה"); return; }
@@ -590,6 +616,22 @@ function App() {
               <button style={S.btnGhost} onClick={() => setCheckedInDay(null)}>שנה</button>
             </section>
           )}
+
+          <section style={S.weekCube}>
+            <div style={S.weekHead}>
+              <span style={S.weekTitle}>📅 השבוע</span>
+              <span style={S.weekHint}>אדום חזק = יום עמוס</span>
+            </div>
+            <div style={S.weekRow}>
+              {weekDays.map((d) => (
+                <div key={d.iso} style={{ ...S.weekDay, background: loadColor(d.count), border: d.isToday ? "2px solid " + C.accent : "1px solid " + C.line }}>
+                  <div style={{ ...S.weekDayName, color: loadText(d.count) }}>{d.dayName}</div>
+                  <div style={{ ...S.weekDayNum, color: loadText(d.count) }}>{d.dayNum}</div>
+                  {d.count > 0 && <div style={{ ...S.weekDayCount, color: loadText(d.count) }}>{d.count}</div>}
+                </div>
+              ))}
+            </div>
+          </section>
 
           <div style={S.grid} className="grid">
             <div>
@@ -1090,6 +1132,15 @@ const S = {
   addRow: { display: "flex", gap: 8, marginBottom: 10 },
   topicPickRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 },
   addHint: { fontSize: 12.5, color: C.dim, marginBottom: 14, marginTop: -4 },
+  weekCube: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 16, marginTop: 22, marginBottom: 4, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  weekHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  weekTitle: { fontSize: 16, fontWeight: 700, color: C.text },
+  weekHint: { fontSize: 12, color: C.dim },
+  weekRow: { display: "flex", gap: 6 },
+  weekDay: { flex: 1, borderRadius: 12, padding: "10px 4px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0 },
+  weekDayName: { fontSize: 12, fontWeight: 600 },
+  weekDayNum: { fontSize: 18, fontWeight: 800, fontFamily: "'Frank Ruhl Libre', serif" },
+  weekDayCount: { fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.35)", borderRadius: 8, padding: "0 6px", marginTop: 2 },
   topicPick: { background: "transparent", border: "1px solid " + C.line, borderRadius: 18, padding: "5px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   filterRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid " + C.line },
   filterChip: { background: "transparent", border: "1px solid " + C.line, color: C.dim, borderRadius: 18, padding: "6px 13px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
