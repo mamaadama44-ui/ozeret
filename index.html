@@ -261,6 +261,8 @@ function App() {
   const [coachDeep, setCoachDeep] = useState("");
   const [coachThread, setCoachThread] = useState([]); // שיחה מתמשכת עם המאמן
   const [coachInput, setCoachInput] = useState("");
+  const [fillBusy, setFillBusy] = useState(false);
+  const [fillDone, setFillDone] = useState(false);
 
   const tk = todayKey();
   const greeting = useMemo(() => GREETINGS[new Date().getDate() % GREETINGS.length], []);
@@ -559,6 +561,60 @@ function App() {
     } finally { setCoachBusy(false); }
   };
   const clearCoachThread = () => setCoachThread([]);
+
+  // ----- אולגה ממלאת את הטאבים בשבילך (משימות + יעדים התחלתיים) -----
+  const fillTabs = async () => {
+    if (fillBusy) return;
+    setFillBusy(true);
+    try {
+      const today = tk;
+      const prompt =
+        'את אולגה, עוזרת אישית של בני. בני מנהל שני עסקים:\n' +
+        '1. שירת האדמה — חווה חינוכית בפיתוח. מנוהלת בשטח ע"י עמית וסתיו. שותפים: גיא, אליק. ' +
+        'פרויקטי בנייה פתוחים לקראת פתיחת סדנאות: מטבח חוץ, סככה גדולה, פינת ישיבה לקבוצות, שירותים, שערים לכניסה ליער ולחווה, שבילים, גדרות.\n' +
+        '2. יודאיקה — עסק מכירה אונליין בתחילת הדרך. עדיין אין מוצרים, פלטפורמה או תוכן. בני מחפש פריטים מעל 1000 ש"ח. צריך: לבחור פלטפורמה, למצוא פריט ראשון, להעלות מכירה ראשונה.\n\n' +
+        'מלאי לבני רשימת משימות התחלתית מעשית (8-12 משימות) ו-3 יעדים. פזרי תאריכי יעד הגיוניים החל מ-' + today + ' (פורמט YYYY-MM-DD).\n' +
+        'נושאים אפשריים: farm, judaica, general. בעלים אפשריים: בני, עמית, סתיו, גיא, אליק.\n' +
+        'דחיפות: high/med/low.\n' +
+        'החזירי JSON בלבד בלי טקסט נוסף:\n' +
+        '{"tasks":[{"title":"...","topic":"farm|judaica|general","owner":"בני","prio":"med","due":"YYYY-MM-DD"}],' +
+        '"goals":[{"name":"...","topic":"farm|judaica","total":5}]}';
+      const text = await callAI(prompt, apiKey);
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const validTopics = ["farm", "judaica", "couple", "general"];
+      const newTasks = (parsed.tasks || []).map((t, i) => ({
+        id: "fill" + Date.now() + "-" + i,
+        title: (t.title || "").trim(),
+        due: /^\d{4}-\d{2}-\d{2}$/.test(t.due) ? t.due : "",
+        cat: "כללי",
+        topic: validTopics.includes(t.topic) ? t.topic : "general",
+        repeat: "once",
+        prio: ["high", "med", "low"].includes(t.prio) ? t.prio : "med",
+        status: "todo",
+        owner: t.owner || "בני",
+        steps: [], feedback: [],
+      })).filter((t) => t.title);
+      // יעדים נשמרים כמשימות-פרויקט עם תת-משימות ריקות (אין טאב יעדים נפרד באולגה — מסומנות כפרויקט)
+      const goalTasks = (parsed.goals || []).map((g, i) => ({
+        id: "goal" + Date.now() + "-" + i,
+        title: "🎯 יעד: " + (g.name || "").trim(),
+        due: "",
+        cat: "פרויקט",
+        topic: validTopics.includes(g.topic) ? g.topic : "general",
+        repeat: "once",
+        prio: "med",
+        status: "todo",
+        owner: "בני",
+        steps: [], feedback: [],
+      })).filter((g) => g.title.length > 5);
+      setTasks((p) => [...p, ...newTasks, ...goalTasks]);
+      setFillDone(true);
+      showToast("✓ אולגה מילאה " + (newTasks.length + goalTasks.length) + " פריטים — ערוך מה שצריך.");
+    } catch (e) {
+      showToast(e.message === "no-key" ? "צריך מפתח AI — פתח 'חיבור AI'." : "לא הצלחתי למלא כרגע, נסה שוב.");
+    } finally { setFillBusy(false); }
+  };
+
 
   const setStatus = (id, status) => {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status, doneAt: status === "done" ? tk : t.doneAt } : t)));
@@ -942,6 +998,13 @@ function App() {
             {!coachDeep && coachThread.length === 0 && (
               <button style={{ ...S.coachDeepBtn, opacity: coachBusy ? 0.6 : 1 }} disabled={coachBusy} onClick={deepCoach}>
                 {coachBusy ? "אולגה חושבת…" : "🤖 תדרוך עמוק — נתח אותי לעומק"}
+              </button>
+            )}
+
+            {/* עזור לי למלא — מופיע רק כשהאפליקציה כמעט ריקה */}
+            {!fillDone && openTasks.length <= 9 && (
+              <button style={{ ...S.coachFillBtn, opacity: fillBusy ? 0.6 : 1 }} disabled={fillBusy} onClick={fillTabs}>
+                {fillBusy ? "אולגה ממלאת בשבילך…" : "✨ עזור לי למלא — אולגה תכין משימות ויעדים"}
               </button>
             )}
 
@@ -1799,6 +1862,7 @@ const S = {
   coachInput: { flex: 1, background: "rgba(243,236,220,0.95)", border: "1px solid #c9764f", color: "#2b2118", borderRadius: 10, padding: "11px 13px", outline: "none", fontSize: 15 },
   coachSend: { background: "#c9764f", color: "#fff", border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 15, fontWeight: 700, cursor: "pointer" },
   coachReset: { background: "transparent", color: "#c9764f", border: "none", fontSize: 13, cursor: "pointer", marginTop: 8, padding: 4 },
+  coachFillBtn: { width: "100%", marginTop: 10, background: "#c9764f", color: "#fff", border: "none", borderRadius: 12, padding: "13px", fontSize: 14.5, fontWeight: 800, cursor: "pointer" },
   // ===== כללי =====
   root: { minHeight: "100vh", background: C.bg, color: C.text, padding: "28px 22px calc(60px + env(safe-area-inset-bottom))", maxWidth: 1000, margin: "0 auto" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 18, paddingBottom: 18, borderBottom: "1px solid " + C.line },
