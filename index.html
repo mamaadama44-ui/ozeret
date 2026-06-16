@@ -259,6 +259,8 @@ function App() {
   // ----- מאמן אולגה -----
   const [coachBusy, setCoachBusy] = useState(false);
   const [coachDeep, setCoachDeep] = useState("");
+  const [coachThread, setCoachThread] = useState([]); // שיחה מתמשכת עם המאמן
+  const [coachInput, setCoachInput] = useState("");
 
   const tk = todayKey();
   const greeting = useMemo(() => GREETINGS[new Date().getDate() % GREETINGS.length], []);
@@ -526,7 +528,38 @@ function App() {
     } finally { setCoachBusy(false); }
   };
 
-  /* ----- פעולות משימה ----- */
+  // ----- שיחה מתמשכת עם המאמן (אתה עונה והוא ממשיך) -----
+  const coachChat = async () => {
+    const msg = coachInput.trim();
+    if (!msg || coachBusy) return;
+    setCoachInput("");
+    const newThread = [...coachThread, { role: "user", text: msg }];
+    setCoachThread(newThread);
+    setCoachBusy(true);
+    try {
+      const d = coachData;
+      const taskList = d.open.slice(0, 20).map((t) =>
+        "• " + t.title + (t.due ? " (יעד " + fmtHe(t.due) + ", " + (daysUntil(t.due) < 0 ? "באיחור" : "עוד " + daysUntil(t.due) + " י׳") + ")" : " (בלי תאריך)") + " [" + (t.owner || "בני") + "]"
+      ).join("\n");
+      // התדרוך הראשוני נחשב ל"הודעה ראשונה" של אולגה בשיחה
+      const convo = [{ role: "ai", text: coachDeep || coachText }, ...newThread]
+        .map((m) => (m.role === "user" ? "בני: " : "אולגה: ") + m.text).join("\n");
+      const text = await callAI(
+        'את אולגה — מאמנת אישית של בני, מנהל חווה חינוכית (שירת האדמה, מנוהלת בשטח ע"י עמית וסתיו) ומפתח עסק יודאיקה.\n' +
+        'את ישירה, חמה ומדרבנת — אף פעם לא מכלה. ביקורת בונה שמכוונת קדימה לפעולה.\n' +
+        'נהלי שיחה טבעית עם בני. עני קצר (2-4 משפטים), עזרי לו להבין מה תקוע ולמה, ודחפי אותו לצעד אחד קונקרטי.\n' +
+        'אם הוא מבקש להוסיף או לעדכן משימה — הצעי לו לעשות זאת והסבירי איך.\n\n' +
+        'מצב נוכחי: ' + slotHe[d.slot] + '. משימות שעבר זמנן ולא זזו: ' + (d.stale.length || 0) + '. להיום: ' + (d.dueToday.length || 0) + '. סגר היום: ' + (d.doneToday.length || 0) + '.\n' +
+        'המשימות הפתוחות:\n' + (taskList || "אין") + '\n\nהתאריך היום: ' + tk + '\n\nהשיחה עד כה:\n' + convo,
+        apiKey);
+      setCoachThread((p) => [...p, { role: "ai", text }]);
+      if (voiceOn) speak(text);
+    } catch (e) {
+      setCoachThread((p) => [...p, { role: "ai", text: e.message === "no-key" ? "צריך מפתח AI — פתח 'חיבור AI' בתחתית." : "לא הצלחתי כרגע, נסה שוב." }]);
+    } finally { setCoachBusy(false); }
+  };
+  const clearCoachThread = () => setCoachThread([]);
+
   const setStatus = (id, status) => {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status, doneAt: status === "done" ? tk : t.doneAt } : t)));
     if (status === "done") showToast(PRAISE[Math.floor(Math.random() * PRAISE.length)]);
@@ -895,9 +928,32 @@ function App() {
             </div>
             <div style={S.coachMsg}>{coachText}</div>
             {coachDeep && <div style={S.coachDeep}>{coachDeep}</div>}
-            <button style={{ ...S.coachDeepBtn, opacity: coachBusy ? 0.6 : 1 }} disabled={coachBusy} onClick={deepCoach}>
-              {coachBusy ? "אולגה חושבת…" : "🤖 תדרוך עמוק — נתח אותי לעומק"}
-            </button>
+
+            {/* שיחה מתמשכת עם המאמן */}
+            {coachThread.length > 0 && (
+              <div style={S.coachThread}>
+                {coachThread.map((m, i) => (
+                  <div key={i} style={m.role === "user" ? S.coachBubbleUser : S.coachBubbleAi}>{m.text}</div>
+                ))}
+                {coachBusy && <div style={S.coachBubbleAi}>אולגה חושבת…</div>}
+              </div>
+            )}
+
+            {!coachDeep && coachThread.length === 0 && (
+              <button style={{ ...S.coachDeepBtn, opacity: coachBusy ? 0.6 : 1 }} disabled={coachBusy} onClick={deepCoach}>
+                {coachBusy ? "אולגה חושבת…" : "🤖 תדרוך עמוק — נתח אותי לעומק"}
+              </button>
+            )}
+
+            {/* שדה תשובה — מדבר עם המאמן */}
+            <div style={S.coachInputRow}>
+              <input style={S.coachInput} value={coachInput} onChange={(e) => setCoachInput(e.target.value)}
+                placeholder="ענה לאולגה / שאל אותה…" onKeyDown={(e) => e.key === "Enter" && coachChat()} />
+              <button style={S.coachSend} disabled={coachBusy || !coachInput.trim()} onClick={coachChat}>שלח</button>
+            </div>
+            {coachThread.length > 0 && (
+              <button style={S.coachReset} onClick={clearCoachThread}>נקה שיחה</button>
+            )}
           </section>
 
           {(() => {
@@ -1736,6 +1792,13 @@ const S = {
   coachMsg: { fontSize: 16, lineHeight: 1.65, color: "#f3ecdc", fontWeight: 500 },
   coachDeep: { fontSize: 15, lineHeight: 1.7, color: "#e8dcc4", marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(201,118,79,0.3)", whiteSpace: "pre-wrap" },
   coachDeepBtn: { width: "100%", marginTop: 14, background: "rgba(201,118,79,0.18)", color: "#e8dcc4", border: "1px solid #c9764f", borderRadius: 12, padding: "12px", fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  coachThread: { marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(201,118,79,0.3)", display: "flex", flexDirection: "column", gap: 8 },
+  coachBubbleUser: { background: "rgba(201,118,79,0.28)", color: "#fff", borderRadius: "12px 12px 12px 4px", padding: "10px 14px", fontSize: 15, lineHeight: 1.5, alignSelf: "flex-start", maxWidth: "88%", fontWeight: 500 },
+  coachBubbleAi: { background: "rgba(243,236,220,0.12)", color: "#f3ecdc", borderRadius: "12px 12px 4px 12px", padding: "10px 14px", fontSize: 15, lineHeight: 1.6, alignSelf: "flex-end", maxWidth: "88%", whiteSpace: "pre-wrap" },
+  coachInputRow: { display: "flex", gap: 8, marginTop: 14 },
+  coachInput: { flex: 1, background: "rgba(243,236,220,0.95)", border: "1px solid #c9764f", color: "#2b2118", borderRadius: 10, padding: "11px 13px", outline: "none", fontSize: 15 },
+  coachSend: { background: "#c9764f", color: "#fff", border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 15, fontWeight: 700, cursor: "pointer" },
+  coachReset: { background: "transparent", color: "#c9764f", border: "none", fontSize: 13, cursor: "pointer", marginTop: 8, padding: 4 },
   // ===== כללי =====
   root: { minHeight: "100vh", background: C.bg, color: C.text, padding: "28px 22px calc(60px + env(safe-area-inset-bottom))", maxWidth: 1000, margin: "0 auto" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 18, paddingBottom: 18, borderBottom: "1px solid " + C.line },
