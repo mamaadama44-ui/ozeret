@@ -205,6 +205,32 @@ async function callAI(prompt, apiKey) {
   return data.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
 }
 
+/* ---------- קריאה ל-AI עם קובץ (תמונה / PDF) ---------- */
+async function callAIWithFile(prompt, fileData, mediaType, apiKey) {
+  if (!apiKey) throw new Error("no-key");
+  const isPdf = mediaType === "application/pdf";
+  const fileBlock = isPdf
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: fileData } }
+    : { type: "image", source: { type: "base64", media_type: mediaType, data: fileData } };
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4000,
+      messages: [{ role: "user", content: [fileBlock, { type: "text", text: prompt }] }],
+    }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || "api-error");
+  return data.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+}
+
 function App() {
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("home");
@@ -263,6 +289,9 @@ function App() {
   const [coachInput, setCoachInput] = useState("");
   const [fillBusy, setFillBusy] = useState(false);
   const [fillDone, setFillDone] = useState(false);
+  // ----- העלאת קובץ למאמן (דף אשראי, קבלה, רשימה, צילום מסך) -----
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadPreview, setUploadPreview] = useState(null); // {kind, items:[], summary}
   // ----- טקס בוקר (בהשראת ג'ו דיספנזה) -----
   const [ritualOpen, setRitualOpen] = useState(false);
   const [ritualStep, setRitualStep] = useState(0);  // 0=עוגן 1=כוונה 2=חזרה מנטלית 3=פגישות 4=שלושת הדברים 5=סגירה
@@ -470,6 +499,30 @@ function App() {
 
   const slotHe = { morning: "בוקר", midday: "צהריים", evening: "ערב" };
 
+  // ----- באנר דחיפה: ההתראה הדחופה ביותר (עדין — רק כשבאמת חשוב) -----
+  const urgentAlert = useMemo(() => {
+    const d = coachData;
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    // 1. פגישה שמתקרבת היום (בתוך שעתיים)
+    const soon = d.meetingsToday
+      .map((m) => { const [hh, mm] = (m.startTime || "0:0").split(":").map(Number); return { m, min: hh * 60 + mm }; })
+      .filter((x) => x.min >= nowMin && x.min - nowMin <= 120)
+      .sort((a, b) => a.min - b.min)[0];
+    if (soon) {
+      const diff = soon.min - nowMin;
+      return { icon: "⏰", text: 'בעוד ' + (diff <= 0 ? "רגע" : diff + " דק׳") + ': ' + soon.m.title + (soon.m.startTime ? " (" + soon.m.startTime + ")" : ""), tone: "warn" };
+    }
+    // 2. משימות שעבר זמנן ולא זזו
+    if (d.stale.length > 0) {
+      return { icon: "🔴", text: d.stale.length + " " + (d.stale.length === 1 ? "משימה חיכתה" : "משימות חיכו") + " יותר מדי — הכי דחופה: " + d.stale[0].title, tone: "danger" };
+    }
+    // 3. הרבה להיום ועוד לא נגעת (אחרי 11 בבוקר)
+    if (new Date().getHours() >= 11 && d.dueToday.length >= 3 && d.doneToday.length === 0) {
+      return { icon: "📅", text: d.dueToday.length + " משימות להיום ועוד לא התחלת — בחר אחת קצרה ותתחיל", tone: "accent" };
+    }
+    return null;
+  }, [coachData]);
+
   const coachText = useMemo(() => {
     const d = coachData;
     const L = [];
@@ -587,6 +640,91 @@ function App() {
     } finally { setCoachBusy(false); }
   };
   const clearCoachThread = () => setCoachThread([]);
+
+  // ----- אולגה מנתחת קובץ ומכניסה למערכת -----
+  const handleFileUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ""; // אפס כדי לאפשר העלאה חוזרת של אותו קובץ
+    if (!file) return;
+    if (!apiKey) { showToast("צריך מפתח AI — פתח 'חיבור AI' בתחתית."); return; }
+    const okTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+    if (!okTypes.includes(file.type)) { showToast("פורמט לא נתמך — העלה תמונה (JPG/PNG) או PDF."); return; }
+    if (file.size > 10 * 1024 * 1024) { showToast("הקובץ גדול מדי (מקסימום 10MB)."); return; }
+    setUploadBusy(true); setUploadPreview(null);
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = () => rej(new Error("read-failed"));
+        r.readAsDataURL(file);
+      });
+      const today = tk;
+      const prompt =
+        'את אולגה, עוזרת של בני. בני העלה קובץ (תמונה או PDF). זהי מה זה ושלפי ממנו פריטים להכנסה למערכת.\n' +
+        'סוגים אפשריים:\n' +
+        '- "expenses" — דף אשראי / קבלה / חשבונית: שלפי כל חיוב (תיאור + סכום בש"ח). סמני kind=expense.\n' +
+        '- "tasks" — רשימת מטלות / צילום מסך עם דברים לעשות: שלפי משימות.\n' +
+        '- "shopping" — רשימת קניות: שלפי פריטים.\n' +
+        '- "events" — פגישות / לו"ז: שלפי אירועים עם תאריך ושעה.\n\n' +
+        'החזירי JSON בלבד בלי טקסט נוסף:\n' +
+        '{"kind":"expenses|tasks|shopping|events","summary":"משפט קצר מה מצאת",' +
+        '"expenses":[{"label":"...","amount":123,"scope":"personal|biz","type":"fixed|variable"}],' +
+        '"tasks":[{"title":"...","due":"YYYY-MM-DD או ריק","topic":"general","prio":"med"}],' +
+        '"shopping":[{"title":"...","cat":"home|farm|other"}],' +
+        '"events":[{"title":"...","due":"YYYY-MM-DD","startTime":"HH:MM או ריק"}]}\n' +
+        'מלאי רק את המערך שמתאים לסוג. התאריך היום: ' + today + '. אם זה דף אשראי — סווגי כל חיוב ל-personal או biz לפי ההיגיון (קניות אישיות=personal, ציוד חווה/עסק=biz).';
+      const text = await callAIWithFile(prompt, base64, file.type, apiKey);
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      setUploadPreview(parsed);
+    } catch (err) {
+      console.error("upload error:", err);
+      showToast(err.message === "no-key" ? "צריך מפתח AI." : "לא הצלחתי לקרוא את הקובץ. נסה תמונה ברורה יותר.");
+    } finally { setUploadBusy(false); }
+  };
+
+  // אישור — מכניס את מה שאולגה קראה למערכת
+  const confirmUpload = () => {
+    const p = uploadPreview;
+    if (!p) return;
+    const validTopics = ["farm", "judaica", "couple", "general"];
+    let count = 0;
+    if (p.kind === "expenses" && Array.isArray(p.expenses)) {
+      const rows = p.expenses.filter((x) => x.amount > 0 && (x.label || "").trim()).map((x, i) => ({
+        id: "exp" + Date.now() + "-" + i, kind: "expense", amount: Math.abs(parseFloat(x.amount)) || 0,
+        label: (x.label || "").trim(), scope: x.scope === "biz" ? "biz" : "personal",
+        type: x.type === "fixed" ? "fixed" : "variable", date: tk,
+      }));
+      setMoney((prev) => [...prev, ...rows]); count = rows.length;
+    } else if (p.kind === "tasks" && Array.isArray(p.tasks)) {
+      const rows = p.tasks.filter((x) => (x.title || "").trim()).map((x, i) => ({
+        id: "upt" + Date.now() + "-" + i, title: x.title.trim(),
+        due: /^\d{4}-\d{2}-\d{2}$/.test(x.due) ? x.due : "", cat: "כללי",
+        topic: validTopics.includes(x.topic) ? x.topic : "general", repeat: "once",
+        prio: ["high", "med", "low"].includes(x.prio) ? x.prio : "med",
+        status: "todo", owner: "בני", steps: [], feedback: [],
+      }));
+      setTasks((prev) => [...prev, ...rows]); count = rows.length;
+    } else if (p.kind === "shopping" && Array.isArray(p.shopping)) {
+      const rows = p.shopping.filter((x) => (x.title || "").trim()).map((x, i) => ({
+        id: "ups" + Date.now() + "-" + i, title: x.title.trim(),
+        cat: ["home", "farm", "other"].includes(x.cat) ? x.cat : "home", done: false,
+      }));
+      setShopList((prev) => [...prev, ...rows]); count = rows.length;
+    } else if (p.kind === "events" && Array.isArray(p.events)) {
+      const rows = p.events.filter((x) => (x.title || "").trim()).map((x, i) => ({
+        id: "upe" + Date.now() + "-" + i, title: x.title.trim(),
+        due: /^\d{4}-\d{2}-\d{2}$/.test(x.due) ? x.due : tk,
+        startTime: /^\d{2}:\d{2}$/.test(x.startTime) ? x.startTime : "",
+        cat: "פגישה", topic: "general", repeat: "once", prio: "med",
+        status: "todo", owner: "בני", steps: [], feedback: [],
+      }));
+      setTasks((prev) => [...prev, ...rows]); count = rows.length;
+    }
+    const kindHe = { expenses: "חיובים", tasks: "משימות", shopping: "פריטי קניות", events: "אירועים" }[p.kind] || "פריטים";
+    setUploadPreview(null);
+    showToast("✓ " + count + " " + kindHe + " נוספו למערכת.");
+  };
+
 
   // ----- אולגה ממלאת את הטאבים בשבילך (משימות + יעדים התחלתיים) -----
   const fillTabs = async () => {
@@ -971,7 +1109,60 @@ function App() {
     showToast("📅 נפתח — אשר הוספה ליומן הטלפון.");
   };
 
-  const [farmSending, setFarmSending] = useState(false);
+  // ----- תזכורות חכמות להיום: יוצר אירועי יומן עם משפטי דחיפה של אולגה -----
+  const [remindersBusy, setRemindersBusy] = useState(false);
+  const makeSmartReminders = () => {
+    const d = coachData;
+    const events = [];
+    const pad = (n) => String(n).padStart(2, "0");
+    const isoStamp = (dt) => dt.getFullYear() + pad(dt.getMonth() + 1) + pad(dt.getDate()) + "T" + pad(dt.getHours()) + pad(dt.getMinutes()) + "00";
+
+    // 1. תזכורת בוקר מדרבנת (08:30) — רק אם עוד לא עבר
+    const morningMsg = d.dueToday.length
+      ? "🌅 בוקר בני. היום על הכוונת: " + d.dueToday[0].title + ". קדימה — צעד אחד."
+      : "🌅 בוקר בני. יום חדש, דף נקי. בחר את הדבר הגדול של היום.";
+    events.push({ time: "08:30", title: morningMsg, dur: 15 });
+
+    // 2. כל פגישה היום — תזכורת 30 דק׳ לפני (כבר עם שעה)
+    d.meetingsToday.forEach((m) => {
+      events.push({ startTime: m.startTime, title: "⏰ " + m.title, dur: 30, isMeeting: true });
+    });
+
+    // 3. דחיפת צהריים (13:00)
+    events.push({ time: "13:00", title: "🔥 בני, איך מתקדם? כנס לאולגה ותראה מה נשאר — עוד יש זמן לסגור.", dur: 10 });
+
+    // 4. סגירת ערב (20:00)
+    events.push({ time: "20:00", title: "🌙 בני, רגע לסכם את היום ולתכנן מחר. כנס לאולגה לטקס הערב.", dur: 10 });
+
+    // בניית ICS עם כל האירועים
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    let vevents = "";
+    events.forEach((ev, i) => {
+      const base = new Date(tk + "T00:00:00");
+      const [hh, mm] = (ev.startTime || ev.time).split(":").map(Number);
+      base.setHours(hh, mm, 0, 0);
+      const end = new Date(base.getTime() + (ev.dur || 15) * 60000);
+      const alarm = ev.isMeeting ? "-PT30M" : "-PT0M";
+      vevents +=
+        "BEGIN:VEVENT\r\n" +
+        "UID:olga-rem-" + Date.now() + "-" + i + "@olga\r\n" +
+        "DTSTAMP:" + stamp + "\r\n" +
+        "DTSTART:" + isoStamp(base) + "\r\n" +
+        "DTEND:" + isoStamp(end) + "\r\n" +
+        "SUMMARY:" + ev.title + "\r\n" +
+        "BEGIN:VALARM\r\nTRIGGER:" + alarm + "\r\nACTION:DISPLAY\r\nDESCRIPTION:" + ev.title + "\r\nEND:VALARM\r\n" +
+        "END:VEVENT\r\n";
+    });
+    const ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Olga//HE\r\nCALSCALE:GREGORIAN\r\n" + vevents + "END:VCALENDAR";
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "olga-reminders-" + tk + ".ics";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("📲 נפתח — אשר, וקבל תזכורות דחיפה ביומן לאורך היום.");
+  };
+
   const prioToFarm = { high: "high", med: "medium", low: "low" };
   const FARM_AREAS = [
     ["animals", "🐓 בעלי חיים"],
@@ -1045,6 +1236,17 @@ function App() {
 
       {tab === "home" && (
         <React.Fragment>
+          {/* ===== באנר דחיפה — מופיע רק כשבאמת חשוב ===== */}
+          {urgentAlert && (
+            <section style={{ ...S.alertBanner,
+              background: urgentAlert.tone === "danger" ? "linear-gradient(135deg,#a8341f,#8a2a18)"
+                : urgentAlert.tone === "warn" ? "linear-gradient(135deg,#c9764f,#b3552d)"
+                : "linear-gradient(135deg,#5b6ef5,#4858d0)" }}>
+              <span style={S.alertIcon}>{urgentAlert.icon}</span>
+              <span style={S.alertText}>{urgentAlert.text}</span>
+            </section>
+          )}
+
           {/* ===== מאמן אולגה — בוקר/צהריים/ערב ===== */}
           <section style={S.coachCard}>
             <div style={S.coachTop}>
@@ -1106,6 +1308,44 @@ function App() {
                 placeholder="דבר/כתוב: שאל, או 'תוסיפי פגישה…' 🎤" onKeyDown={(e) => e.key === "Enter" && coachChat()} />
               <button style={S.coachSend} disabled={coachBusy || !coachInput.trim()} onClick={coachChat}>שלח</button>
             </div>
+
+            {/* העלאת קובץ — אולגה מנתחת ומכניסה למערכת */}
+            <label style={{ ...S.coachUpload, opacity: uploadBusy ? 0.6 : 1 }}>
+              {uploadBusy ? "📎 אולגה קוראת את הקובץ…" : "📎 העלה דף אשראי / קבלה / רשימה / צילום — אולגה תכניס למערכת"}
+              <input type="file" accept="image/*,application/pdf" style={{ display: "none" }}
+                disabled={uploadBusy} onChange={handleFileUpload} />
+            </label>
+
+            {/* תזכורות חכמות ליומן עם משפטי דחיפה */}
+            <button style={S.coachReminders} onClick={makeSmartReminders}>
+              📲 קבע לי תזכורות דחיפה להיום ביומן הטלפון
+            </button>
+
+            {/* תצוגה מקדימה לאישור */}
+            {uploadPreview && (
+              <div style={S.uploadPreview}>
+                <div style={S.uploadSummary}>📋 {uploadPreview.summary || "אולגה קראה את הקובץ"}</div>
+                <div style={S.uploadList}>
+                  {uploadPreview.kind === "expenses" && (uploadPreview.expenses || []).map((x, i) => (
+                    <div key={i} style={S.uploadItem}><span>{x.label}</span><span style={S.uploadAmount}>₪{x.amount} · {x.scope === "biz" ? "עסקי" : "פרטי"}</span></div>
+                  ))}
+                  {uploadPreview.kind === "tasks" && (uploadPreview.tasks || []).map((x, i) => (
+                    <div key={i} style={S.uploadItem}><span>{x.title}</span>{x.due && <span style={S.uploadAmount}>{fmtHe(x.due)}</span>}</div>
+                  ))}
+                  {uploadPreview.kind === "shopping" && (uploadPreview.shopping || []).map((x, i) => (
+                    <div key={i} style={S.uploadItem}><span>{x.title}</span></div>
+                  ))}
+                  {uploadPreview.kind === "events" && (uploadPreview.events || []).map((x, i) => (
+                    <div key={i} style={S.uploadItem}><span>{x.title}</span><span style={S.uploadAmount}>{x.startTime ? x.startTime + " · " : ""}{x.due ? fmtHe(x.due) : ""}</span></div>
+                  ))}
+                </div>
+                <div style={S.uploadBtns}>
+                  <button style={S.uploadConfirm} onClick={confirmUpload}>✓ אשר והכנס למערכת</button>
+                  <button style={S.uploadCancel} onClick={() => setUploadPreview(null)}>ביטול</button>
+                </div>
+              </div>
+            )}
+
             {coachThread.length > 0 && (
               <button style={S.coachReset} onClick={clearCoachThread}>נקה שיחה</button>
             )}
@@ -2009,6 +2249,19 @@ const S = {
   coachSend: { background: "#c9764f", color: "#fff", border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 15, fontWeight: 700, cursor: "pointer" },
   coachReset: { background: "transparent", color: "#c9764f", border: "none", fontSize: 13, cursor: "pointer", marginTop: 8, padding: 4 },
   coachAdded: { marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(0,200,117,0.3)", color: "#7ee0a8", fontSize: 13.5, fontWeight: 600 },
+  coachUpload: { display: "block", width: "100%", marginTop: 10, background: "rgba(243,236,220,0.1)", color: "#e8dcc4", border: "1px dashed #c9764f", borderRadius: 12, padding: "12px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", textAlign: "center", boxSizing: "border-box" },
+  coachReminders: { width: "100%", marginTop: 10, background: "rgba(243,236,220,0.1)", color: "#e8dcc4", border: "1px solid #c9764f", borderRadius: 12, padding: "12px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", textAlign: "center" },
+  alertBanner: { display: "flex", alignItems: "center", gap: 12, borderRadius: 16, padding: "14px 18px", marginBottom: 14, boxShadow: "0 4px 16px rgba(0,0,0,0.15)" },
+  alertIcon: { fontSize: 24, flexShrink: 0 },
+  alertText: { fontSize: 15, fontWeight: 700, color: "#fff", lineHeight: 1.4 },
+  uploadPreview: { marginTop: 12, background: "rgba(243,236,220,0.08)", border: "1px solid rgba(201,118,79,0.4)", borderRadius: 12, padding: 14 },
+  uploadSummary: { fontSize: 14.5, fontWeight: 700, color: "#f3ecdc", marginBottom: 10 },
+  uploadList: { display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto", marginBottom: 12 },
+  uploadItem: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: "rgba(243,236,220,0.06)", borderRadius: 8, padding: "8px 11px", fontSize: 13.5, color: "#e8dcc4" },
+  uploadAmount: { color: "#c9764f", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" },
+  uploadBtns: { display: "flex", gap: 8 },
+  uploadConfirm: { flex: 1, background: "#00c875", color: "#fff", border: "none", borderRadius: 10, padding: "11px", fontSize: 14, fontWeight: 800, cursor: "pointer" },
+  uploadCancel: { background: "transparent", color: "#a8957d", border: "1px solid rgba(201,118,79,0.4)", borderRadius: 10, padding: "11px 16px", fontSize: 13.5, cursor: "pointer" },
   coachFillBtn: { width: "100%", marginTop: 10, background: "#c9764f", color: "#fff", border: "none", borderRadius: 12, padding: "13px", fontSize: 14.5, fontWeight: 800, cursor: "pointer" },
   // ===== טקס בוקר =====
   ritualStartBtn: { width: "100%", marginTop: 14, background: "linear-gradient(135deg,#c9764f,#b3552d)", color: "#fff", border: "none", borderRadius: 12, padding: "13px", fontSize: 14.5, fontWeight: 800, cursor: "pointer" },
