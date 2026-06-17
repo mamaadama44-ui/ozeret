@@ -263,6 +263,13 @@ function App() {
   const [coachInput, setCoachInput] = useState("");
   const [fillBusy, setFillBusy] = useState(false);
   const [fillDone, setFillDone] = useState(false);
+  // ----- טקס בוקר (בהשראת ג'ו דיספנזה) -----
+  const [ritualOpen, setRitualOpen] = useState(false);
+  const [ritualStep, setRitualStep] = useState(0);  // 0=עוגן 1=כוונה 2=חזרה מנטלית 3=פגישות 4=שלושת הדברים 5=סגירה
+  const [ritualFeeling, setRitualFeeling] = useState("");   // איך אני רוצה להרגיש
+  const [ritualVision, setRitualVision] = useState("");     // חזרה מנטלית של היום
+  const [ritualMits, setRitualMits] = useState("");         // 3 הדברים החשובים
+  const [ritualDoneDay, setRitualDoneDay] = useState(null); // ביום שבו הושלם
 
   const tk = todayKey();
   const greeting = useMemo(() => GREETINGS[new Date().getDate() % GREETINGS.length], []);
@@ -284,6 +291,9 @@ function App() {
         if (d.eveningNotes) setEveningNotes(d.eveningNotes);
         if (d.shopList) setShopList(d.shopList);
         if (d.money) setMoney(d.money);
+        if (d.ritualDoneDay) setRitualDoneDay(d.ritualDoneDay);
+        if (d.ritualFeeling) setRitualFeeling(d.ritualFeeling);
+        if (d.ritualVision) setRitualVision(d.ritualVision);
       }
       setLoaded(true);
     }).catch((e) => { console.warn(e); setLoaded(true); });
@@ -298,10 +308,11 @@ function App() {
       focusDay: checkedInDay === tk ? tk : "",
       lastAnalyzedAt, patterns: patterns || null,
       eveningNotes, shopList, money,
+      ritualDoneDay, ritualFeeling, ritualVision,
       updatedAt: new Date().toISOString(),
     };
     DOC_REF().set(payload, { merge: true }).catch((e) => console.warn("save failed", e));
-  }, [tasks, habitLog, focus, checkedInDay, patterns, lastAnalyzedAt, eveningNotes, shopList, money, loaded]);
+  }, [tasks, habitLog, focus, checkedInDay, patterns, lastAnalyzedAt, eveningNotes, shopList, money, ritualDoneDay, ritualFeeling, ritualVision, loaded]);
 
   const saveKey = (v) => {
     setApiKey(v);
@@ -614,6 +625,58 @@ function App() {
       showToast(e.message === "no-key" ? "צריך מפתח AI — פתח 'חיבור AI'." : "לא הצלחתי למלא כרגע, נסה שוב.");
     } finally { setFillBusy(false); }
   };
+
+  // ----- טקס בוקר: ניווט בין שלבים -----
+  const ritualSteps = [
+    { key: "anchor", title: "🌅 רגע לפני הכל",
+      body: "בוקר טוב בני. לפני המשימות, לפני הטלפון — רגע אחד רק לך.\nקח נשימה עמוקה אחת. ארוכה. ועוד אחת.\nהנה אנחנו. עכשיו אנחנו מתחילים." },
+    { key: "feeling", title: "💛 איך אתה רוצה להרגיש?",
+      body: "לא מה לעשות — איך להרגיש היום.\nרגוע? חד? פתוח? מלא אנרגיה? בחר מילה אחת ותכתוב אותה.",
+      field: "feeling", placeholder: "המילה שלי להיום…" },
+    { key: "vision", title: "🎬 חזרה מנטלית של היום",
+      body: "עצום עיניים לרגע. דמיין שזה כבר הערב — היום נגמר, והוא היה מוצלח.\nתראה את עצמך מסתכל אחורה. מה עשית בו שגרם לזה?",
+      field: "vision", placeholder: "ביום מוצלח, עשיתי…" },
+    { key: "meetings", title: "📅 מה כבר קבוע היום",
+      body: "" }, // ממולא דינמית
+    { key: "mits", title: "🎯 שלושת הדברים",
+      body: "מתוך מה שדמיינת — מה שלושת הדברים שאם יקרו היום, היום באמת הצליח?",
+      field: "mits", placeholder: "1. …\n2. …\n3. …" },
+    { key: "close", title: "🌞 סגירה",
+      body: "זהו. יש לך כוונה, יש לך תמונה, יש לך שלושה צעדים.\nלך תהיה הגרסה הזאת של עצמך היום." },
+  ];
+
+  const startRitual = () => { setRitualStep(0); setRitualOpen(true); };
+  const ritualNext = () => {
+    if (ritualStep < ritualSteps.length - 1) setRitualStep((s) => s + 1);
+    else finishRitual();
+  };
+  const ritualSkipToPlan = () => setRitualStep(4); // דלג ישר לשלושת הדברים
+  const finishRitual = () => {
+    // הפוך את שלושת הדברים למשימות להיום
+    const raw = (ritualMits || "").trim();
+    if (raw) {
+      const lines = raw.split("\n").map((l) => l.replace(/^\s*\d+[.)]\s*/, "").replace(/^\s*[-•]\s*/, "").trim()).filter((l) => l.length > 0);
+      if (lines.length) {
+        const newTasks = lines.map((title, i) => ({
+          id: "mit" + Date.now() + "-" + i, title, due: tk, cat: "כללי", topic: "general",
+          repeat: "once", prio: "high", status: "todo", owner: "בני", steps: [], feedback: [],
+        }));
+        setTasks((p) => [...p, ...newTasks]);
+      }
+    }
+    if (ritualFeeling.trim() && !focus.trim()) { setFocus("להרגיש " + ritualFeeling.trim()); setCheckedInDay(tk); }
+    setRitualDoneDay(tk);
+    setRitualOpen(false);
+    showToast("☀️ טקס הבוקר הושלם — שיהיה יום מצוין, בני.");
+  };
+  const ritualSetField = (field, val) => {
+    if (field === "feeling") setRitualFeeling(val);
+    else if (field === "vision") setRitualVision(val);
+    else if (field === "mits") setRitualMits(val);
+  };
+  const ritualGetField = (field) =>
+    field === "feeling" ? ritualFeeling : field === "vision" ? ritualVision : field === "mits" ? ritualMits : "";
+
 
 
   const setStatus = (id, status) => {
@@ -984,6 +1047,16 @@ function App() {
             </div>
             <div style={S.coachMsg}>{coachText}</div>
             {coachDeep && <div style={S.coachDeep}>{coachDeep}</div>}
+
+            {/* כפתור טקס בוקר — מופיע בבוקר אם עוד לא נעשה היום */}
+            {coachData.slot === "morning" && ritualDoneDay !== tk && (
+              <button style={S.ritualStartBtn} onClick={startRitual}>
+                🌅 התחל טקס בוקר — כוונה, חזון, ושלושה צעדים
+              </button>
+            )}
+            {ritualDoneDay === tk && (
+              <div style={S.ritualDoneNote}>☀️ טקס הבוקר הושלם היום{ritualFeeling ? " · המילה שלך: " + ritualFeeling : ""}</div>
+            )}
 
             {/* שיחה מתמשכת עם המאמן */}
             {coachThread.length > 0 && (
@@ -1827,6 +1900,67 @@ function App() {
         </div>
       )}
 
+      {/* ===== מודל טקס בוקר ===== */}
+      {ritualOpen && (() => {
+        const step = ritualSteps[ritualStep];
+        const isLast = ritualStep === ritualSteps.length - 1;
+        const meetingsToday = tasks.filter((t) => t.due === tk && t.startTime && t.status !== "done");
+        const eventsToday = tasks.filter((t) => t.due === tk && t.status !== "done");
+        return (
+          <div style={S.ritualWrap}>
+            <div style={S.ritualModal}>
+              <div style={S.ritualProgress}>
+                {ritualSteps.map((_, i) => (
+                  <div key={i} style={{ ...S.ritualDot, background: i <= ritualStep ? "#c9764f" : "rgba(243,236,220,0.25)" }} />
+                ))}
+              </div>
+
+              <h2 style={S.ritualTitle}>{step.title}</h2>
+
+              {/* תוכן השלב */}
+              {step.key === "meetings" ? (
+                <div style={S.ritualBody}>
+                  {eventsToday.length === 0
+                    ? "היומן שלך פנוי היום. דף חלק — אתה מחליט מה ממלא אותו."
+                    : "זה מה שכבר קבוע היום:"}
+                  {eventsToday.length > 0 && (
+                    <div style={S.ritualMeetings}>
+                      {eventsToday.map((m) => (
+                        <div key={m.id} style={S.ritualMeeting}>
+                          {m.startTime ? "🕐 " + m.startTime + " · " : "• "}{m.title}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={S.ritualBody}>{step.body}</div>
+              )}
+
+              {/* שדה קלט אם יש */}
+              {step.field && (
+                <textarea style={S.ritualInput} rows={step.field === "mits" ? 4 : 2}
+                  value={ritualGetField(step.field)}
+                  onChange={(e) => ritualSetField(step.field, e.target.value)}
+                  placeholder={step.placeholder} />
+              )}
+              {step.field && <div style={S.ritualHint}>💡 טיפ: לחץ על מקש המיקרופון 🎤 במקלדת כדי לדבר במקום להקליד</div>}
+
+              {/* כפתורי ניווט */}
+              <div style={S.ritualNav}>
+                <button style={S.ritualNextBtn} onClick={ritualNext}>
+                  {isLast ? "✓ סיים והתחל את היום" : "המשך →"}
+                </button>
+                {!isLast && ritualStep < 4 && (
+                  <button style={S.ritualSkip} onClick={ritualSkipToPlan}>דלג לתכנון ←</button>
+                )}
+              </div>
+              <button style={S.ritualClose} onClick={() => setRitualOpen(false)}>סגור</button>
+            </div>
+          </div>
+        );
+      })()}
+
       {toast && <div style={S.toast}>{toast}</div>}
       <footer style={S.footer}>{firebaseReady ? "מחובר ל-Firebase · הנתונים נשמרים." : "מצב מקומי — חבר Firebase לשמירה קבועה (ראה מדריך)."}</footer>
     </div>
@@ -1863,6 +1997,23 @@ const S = {
   coachSend: { background: "#c9764f", color: "#fff", border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 15, fontWeight: 700, cursor: "pointer" },
   coachReset: { background: "transparent", color: "#c9764f", border: "none", fontSize: 13, cursor: "pointer", marginTop: 8, padding: 4 },
   coachFillBtn: { width: "100%", marginTop: 10, background: "#c9764f", color: "#fff", border: "none", borderRadius: 12, padding: "13px", fontSize: 14.5, fontWeight: 800, cursor: "pointer" },
+  // ===== טקס בוקר =====
+  ritualStartBtn: { width: "100%", marginTop: 14, background: "linear-gradient(135deg,#c9764f,#b3552d)", color: "#fff", border: "none", borderRadius: 12, padding: "13px", fontSize: 14.5, fontWeight: 800, cursor: "pointer" },
+  ritualDoneNote: { marginTop: 14, fontSize: 13.5, color: "#c9764f", textAlign: "center", fontWeight: 600 },
+  ritualWrap: { position: "fixed", inset: 0, background: "rgba(20,15,10,0.82)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 90, padding: 20 },
+  ritualModal: { background: "linear-gradient(160deg,#2b2118 0%,#3a2c1f 100%)", borderRadius: 22, padding: "26px 22px", width: "100%", maxWidth: 460, boxShadow: "0 20px 60px rgba(0,0,0,0.5)", maxHeight: "88vh", overflowY: "auto" },
+  ritualProgress: { display: "flex", gap: 6, justifyContent: "center", marginBottom: 22 },
+  ritualDot: { width: 28, height: 5, borderRadius: 4, transition: ".3s" },
+  ritualTitle: { fontSize: 22, fontWeight: 800, color: "#f3ecdc", textAlign: "center", marginBottom: 16, fontFamily: "'Frank Ruhl Libre', serif" },
+  ritualBody: { fontSize: 16.5, lineHeight: 1.7, color: "#e8dcc4", textAlign: "center", whiteSpace: "pre-wrap", marginBottom: 18 },
+  ritualMeetings: { marginTop: 14, display: "flex", flexDirection: "column", gap: 8 },
+  ritualMeeting: { background: "rgba(201,118,79,0.18)", borderRadius: 10, padding: "10px 14px", fontSize: 15, color: "#f3ecdc", fontWeight: 500 },
+  ritualInput: { width: "100%", background: "rgba(243,236,220,0.95)", border: "1px solid #c9764f", color: "#2b2118", borderRadius: 12, padding: "13px", outline: "none", fontSize: 16, resize: "vertical", fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" },
+  ritualHint: { fontSize: 12.5, color: "#a8957d", textAlign: "center", marginBottom: 16 },
+  ritualNav: { display: "flex", flexDirection: "column", gap: 10, marginTop: 8 },
+  ritualNextBtn: { width: "100%", background: "#c9764f", color: "#fff", border: "none", borderRadius: 12, padding: "14px", fontSize: 16, fontWeight: 800, cursor: "pointer" },
+  ritualSkip: { background: "transparent", color: "#a8957d", border: "none", fontSize: 13.5, cursor: "pointer", padding: 6 },
+  ritualClose: { width: "100%", background: "transparent", color: "#8a7560", border: "none", fontSize: 13, cursor: "pointer", marginTop: 10, padding: 4 },
   // ===== כללי =====
   root: { minHeight: "100vh", background: C.bg, color: C.text, padding: "28px 22px calc(60px + env(safe-area-inset-bottom))", maxWidth: 1000, margin: "0 auto" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 18, paddingBottom: 18, borderBottom: "1px solid " + C.line },
