@@ -451,16 +451,8 @@ function App() {
     return p.join(" ");
   }, [tasks, focus, checkedInDay, tk, openTasks.length, doneCount, pct, nextTask, habitsDone, habits.length]);
 
-  useEffect(() => {
-    if (!voiceOn || spoke || !loaded) return;
-    const id = setTimeout(() => {
-      if ("speechSynthesis" in window && window.speechSynthesis.getVoices().length === 0) {
-        window.speechSynthesis.onvoiceschanged = () => speak(summaryText);
-      } else speak(summaryText);
-      setSpoke(true);
-    }, 800);
-    return () => clearTimeout(id);
-  }, [loaded]);
+  // הקראה אוטומטית בכניסה — מבוטלת. אולגה מקריאה רק בלחיצה על "דבר אליי",
+  // והמתג "קול" שולט רק על הקראת תשובות בשיחה.
 
   /* ---------- מאמן אולגה — בודק כמה פעמים ביום ---------- */
   const coachData = useMemo(() => {
@@ -554,19 +546,42 @@ function App() {
       const taskList = d.open.slice(0, 20).map((t) =>
         "• " + t.title + (t.due ? " (יעד " + fmtHe(t.due) + ", " + (daysUntil(t.due) < 0 ? "באיחור" : "עוד " + daysUntil(t.due) + " י׳") + ")" : " (בלי תאריך)") + " [" + (t.owner || "בני") + "]"
       ).join("\n");
-      // התדרוך הראשוני נחשב ל"הודעה ראשונה" של אולגה בשיחה
       const convo = [{ role: "ai", text: coachDeep || coachText }, ...newThread]
         .map((m) => (m.role === "user" ? "בני: " : "אולגה: ") + m.text).join("\n");
       const text = await callAI(
         'את אולגה — מאמנת אישית של בני, מנהל חווה חינוכית (שירת האדמה, מנוהלת בשטח ע"י עמית וסתיו) ומפתח עסק יודאיקה.\n' +
         'את ישירה, חמה ומדרבנת — אף פעם לא מכלה. ביקורת בונה שמכוונת קדימה לפעולה.\n' +
-        'נהלי שיחה טבעית עם בני. עני קצר (2-4 משפטים), עזרי לו להבין מה תקוע ולמה, ודחפי אותו לצעד אחד קונקרטי.\n' +
-        'אם הוא מבקש להוסיף או לעדכן משימה — הצעי לו לעשות זאת והסבירי איך.\n\n' +
-        'מצב נוכחי: ' + slotHe[d.slot] + '. משימות שעבר זמנן ולא זזו: ' + (d.stale.length || 0) + '. להיום: ' + (d.dueToday.length || 0) + '. סגר היום: ' + (d.doneToday.length || 0) + '.\n' +
+        'נהלי שיחה טבעית עם בני. עני קצר (2-4 משפטים).\n' +
+        'חשוב: כשבני מבקש להוסיף משימה, פגישה, או תזכורת (למשל "תוסיפי פגישה עם נדב שלישי ב-10", "תזכירי לי לקנות זרעים", "צריך לתקן את הגדר") — הוסיפי אותם למערך addItems. זהי שעה (אם נאמרה) ותאריך. אם בני לא ציין תאריך לפגישה — נחשי הגיוני (היום/מחר/היום בשבוע שציין).\n' +
+        'נושאים: farm (חווה), judaica (יודאיקה), couple (זוגיות), general (כללי). בעלים: בני/עמית/סתיו/גיא/אליק.\n' +
+        'החזירי JSON בלבד בלי טקסט נוסף:\n' +
+        '{"reply":"תשובה קצרה בעברית","addItems":[{"title":"...","due":"YYYY-MM-DD או ריק","startTime":"HH:MM או ריק","topic":"general","owner":"בני","prio":"med","isMeeting":true/false}]}\n' +
+        'אם אין מה להוסיף — addItems מערך ריק.\n\n' +
+        'מצב נוכחי: ' + slotHe[d.slot] + '. להיום: ' + (d.dueToday.length || 0) + '. סגר היום: ' + (d.doneToday.length || 0) + '.\n' +
         'המשימות הפתוחות:\n' + (taskList || "אין") + '\n\nהתאריך היום: ' + tk + '\n\nהשיחה עד כה:\n' + convo,
         apiKey);
-      setCoachThread((p) => [...p, { role: "ai", text }]);
-      if (voiceOn) speak(text);
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const validTopics = ["farm", "judaica", "couple", "general"];
+      const items = (parsed.addItems || []).map((it, i) => ({
+        id: "voice" + Date.now() + "-" + i,
+        title: (it.title || "").trim(),
+        due: /^\d{4}-\d{2}-\d{2}$/.test(it.due) ? it.due : "",
+        startTime: /^\d{2}:\d{2}$/.test(it.startTime) ? it.startTime : "",
+        cat: it.isMeeting ? "פגישה" : "כללי",
+        topic: validTopics.includes(it.topic) ? it.topic : "general",
+        repeat: "once",
+        prio: ["high", "med", "low"].includes(it.prio) ? it.prio : "med",
+        status: "todo",
+        owner: it.owner || "בני",
+        steps: [], feedback: [],
+      })).filter((it) => it.title);
+      if (items.length) setTasks((p) => [...p, ...items]);
+      const replyText = parsed.reply || "";
+      setCoachThread((p) => [...p, {
+        role: "ai", text: replyText,
+        added: items.map((it) => it.title + (it.startTime ? " (" + it.startTime + ")" : "") + (it.due ? " · " + fmtHe(it.due) : "")),
+      }]);
+      if (voiceOn && replyText) speak(replyText);
     } catch (e) {
       setCoachThread((p) => [...p, { role: "ai", text: e.message === "no-key" ? "צריך מפתח AI — פתח 'חיבור AI' בתחתית." : "לא הצלחתי כרגע, נסה שוב." }]);
     } finally { setCoachBusy(false); }
@@ -1059,7 +1074,14 @@ function App() {
             {coachThread.length > 0 && (
               <div style={S.coachThread}>
                 {coachThread.map((m, i) => (
-                  <div key={i} style={m.role === "user" ? S.coachBubbleUser : S.coachBubbleAi}>{m.text}</div>
+                  <div key={i} style={m.role === "user" ? S.coachBubbleUser : S.coachBubbleAi}>
+                    {m.text}
+                    {m.added && m.added.length > 0 && (
+                      <div style={S.coachAdded}>
+                        ✓ {m.added.length === 1 ? "נוסף" : "נוספו"}: {m.added.join(" · ")}
+                      </div>
+                    )}
+                  </div>
                 ))}
                 {coachBusy && <div style={S.coachBubbleAi}>אולגה חושבת…</div>}
               </div>
@@ -1081,7 +1103,7 @@ function App() {
             {/* שדה תשובה — מדבר עם המאמן */}
             <div style={S.coachInputRow}>
               <input style={S.coachInput} value={coachInput} onChange={(e) => setCoachInput(e.target.value)}
-                placeholder="ענה לאולגה / שאל אותה…" onKeyDown={(e) => e.key === "Enter" && coachChat()} />
+                placeholder="דבר/כתוב: שאל, או 'תוסיפי פגישה…' 🎤" onKeyDown={(e) => e.key === "Enter" && coachChat()} />
               <button style={S.coachSend} disabled={coachBusy || !coachInput.trim()} onClick={coachChat}>שלח</button>
             </div>
             {coachThread.length > 0 && (
@@ -1986,6 +2008,7 @@ const S = {
   coachInput: { flex: 1, background: "rgba(243,236,220,0.95)", border: "1px solid #c9764f", color: "#2b2118", borderRadius: 10, padding: "11px 13px", outline: "none", fontSize: 15 },
   coachSend: { background: "#c9764f", color: "#fff", border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 15, fontWeight: 700, cursor: "pointer" },
   coachReset: { background: "transparent", color: "#c9764f", border: "none", fontSize: 13, cursor: "pointer", marginTop: 8, padding: 4 },
+  coachAdded: { marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(0,200,117,0.3)", color: "#7ee0a8", fontSize: 13.5, fontWeight: 600 },
   coachFillBtn: { width: "100%", marginTop: 10, background: "#c9764f", color: "#fff", border: "none", borderRadius: 12, padding: "13px", fontSize: 14.5, fontWeight: 800, cursor: "pointer" },
   // ===== טקס בוקר =====
   ritualStartBtn: { width: "100%", marginTop: 14, background: "linear-gradient(135deg,#c9764f,#b3552d)", color: "#fff", border: "none", borderRadius: 12, padding: "13px", fontSize: 14.5, fontWeight: 800, cursor: "pointer" },
