@@ -1022,15 +1022,6 @@ function App() {
         </div>
       </header>
 
-      <div style={S.voiceBar}>
-        <button style={S.voiceBtn} onClick={() => speak(summaryText)}>🔊 דבר אליי</button>
-        <button style={S.voiceGhost} onClick={stopSpeak}>השתק</button>
-        <label style={S.voiceToggle}>
-          <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
-          <span>הקראה אוטומטית בכניסה</span>
-        </label>
-      </div>
-
       <nav style={S.tabs}>
         {[["home", "בית"], ["chat", "צ׳אט"], ["cal", "📅 יומן"], ["shop", "🛒 קניות"], ["money", "💰 כספים"], ["summary", "📊 סיכומים"], ["board", "לוח"], ["trip", "מצב טיול"], ["focus", "🎧 פוקוס"], ["patterns", "דפוסים"]].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...S.tab, ...(tab === k ? S.tabActive : {}) }}>{l}</button>
@@ -1043,7 +1034,13 @@ function App() {
           <section style={S.coachCard}>
             <div style={S.coachTop}>
               <span style={S.coachBadge}>🌻 אולגה · {slotHe[coachData.slot]}</span>
-              <button style={S.coachSpeak} onClick={speakCoach}>🔊 דבר אליי</button>
+              <div style={S.coachTopBtns}>
+                <button style={S.coachSpeak} onClick={speakCoach}>🔊 דבר אליי</button>
+                <label style={S.coachVoiceToggle} title="הקראה אוטומטית של תשובות אולגה">
+                  <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
+                  <span>קול</span>
+                </label>
+              </div>
             </div>
             <div style={S.coachMsg}>{coachText}</div>
             {coachDeep && <div style={S.coachDeep}>{coachDeep}</div>}
@@ -1105,16 +1102,7 @@ function App() {
               </section>
             );
           })()}
-          {checkedInDay !== tk ? (
-            <section style={S.checkin}>
-              <div style={S.greeting}>{greeting}</div>
-              <div style={S.checkinRow}>
-                <input style={S.focusInput} value={focus} onChange={(e) => setFocus(e.target.value)}
-                  placeholder="הדבר האחד שחייב לקרות היום…" onKeyDown={(e) => e.key === "Enter" && checkIn()} />
-                <button style={S.btnAccent} onClick={checkIn}>נעל מוקד</button>
-              </div>
-            </section>
-          ) : (
+          {checkedInDay === tk && focus.trim() && (
             <section style={S.focusLocked}>
               <div><div style={S.dimSmall}>המוקד שלך להיום</div><div style={S.focusText}>{focus}</div></div>
               <button style={S.btnGhost} onClick={() => setCheckedInDay(null)}>שנה</button>
@@ -1986,6 +1974,8 @@ const S = {
   coachTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 },
   coachBadge: { fontSize: 12, fontWeight: 700, letterSpacing: 1, color: "#c9764f", textTransform: "uppercase" },
   coachSpeak: { background: "rgba(201,118,79,0.2)", color: "#e8dcc4", border: "1px solid #c9764f", borderRadius: 10, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  coachTopBtns: { display: "flex", alignItems: "center", gap: 10 },
+  coachVoiceToggle: { display: "flex", alignItems: "center", gap: 5, color: "#a8957d", fontSize: 13, cursor: "pointer" },
   coachMsg: { fontSize: 16, lineHeight: 1.65, color: "#f3ecdc", fontWeight: 500 },
   coachDeep: { fontSize: 15, lineHeight: 1.7, color: "#e8dcc4", marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(201,118,79,0.3)", whiteSpace: "pre-wrap" },
   coachDeepBtn: { width: "100%", marginTop: 14, background: "rgba(201,118,79,0.18)", color: "#e8dcc4", border: "1px solid #c9764f", borderRadius: 12, padding: "12px", fontSize: 14, fontWeight: 700, cursor: "pointer" },
