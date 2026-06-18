@@ -182,6 +182,38 @@ const PRAISE = [
   "זהו, ככה זה נראה. ממשיכים.",
 ];
 
+// ---------- מאגר היכולות של אולגה — לטיפים ולמידה ----------
+// detect: פונקציה שמקבלת מצב ומחזירה true אם בני "לא משתמש" ביכולת (לדחיפה פרואקטיבית)
+const CAPABILITIES = [
+  { id: "voiceTask", emoji: "🎤", title: "דיבור → משימות",
+    tip: "אתה יכול לדבר אליי בשדה למטה (מיקרופון של המקלדת) ולהגיד 'תוסיפי פגישה עם נדב מחר ב-10' — ואני אוסיף את זה לבד, עם תאריך ושעה.",
+    detect: (s) => s.tasks.length >= 3 },
+  { id: "upload", emoji: "📎", title: "העלאת דף אשראי / קבלות",
+    tip: "תעלה לי דף אשראי או קבלה (כפתור 📎 למעלה) — ואני אקרא את כל החיובים ואסדר אותם בטאב כספים. ככה תדע על מה הוצאת.",
+    detect: (s) => s.money.length === 0 },
+  { id: "ritual", emoji: "🌅", title: "טקס בוקר",
+    tip: "בבוקר, לחץ 'התחל טקס בוקר' — דקה של כוונה וחזון, ואז בחירת שלושת הדברים של היום. זה משנה את כל היום.",
+    detect: (s) => s.slot === "morning" && s.ritualDoneDay !== s.tk },
+  { id: "reminders", emoji: "📲", title: "תזכורות דחיפה ביומן",
+    tip: "לחץ 'קבע לי תזכורות' ואני אשתול ביומן הטלפון שלך דחיפות לאורך היום — בוקר, צהריים וערב. הטלפון יזכיר לך גם כשאתה בחוץ.",
+    detect: () => true },
+  { id: "breakdown", emoji: "🧩", title: "פירוק משימה גדולה",
+    tip: "משימה מרגישה גדולה מדי? לחץ 'פרק לצעדים' עליה — ואני אחלק אותה לצעדים קטנים שאפשר להתחיל מהם.",
+    detect: (s) => s.tasks.some((t) => !t.steps || t.steps.length === 0) },
+  { id: "feedback", emoji: "💬", title: "משוב ולמידה",
+    tip: "סיימת משימה? לחץ 'תן משוב' וספר לי איך היה — אני אזהה דפוסים ואעזור לך להבין על מה אתה נתקע שוב ושוב.",
+    detect: (s) => s.feedbackCount < 2 },
+  { id: "farm", emoji: "🌾", title: "שליחת משימות לחווה",
+    tip: "אתה יכול לשלוח משימה ישר לעמית וסתיו: ערוך משימה, סמן '🌾 משימת חווה', ושלח. היא תופיע אצלם בחווה.",
+    detect: () => true },
+  { id: "shop", emoji: "🛒", title: "רשימת קניות",
+    tip: "יש טאב קניות עם קטגוריות (בית/חווה/אחר). אפשר גם לדבר אליי 'תוסיפי זרעים לקניות' ואני אוסיף.",
+    detect: (s) => s.shopList.length === 0 },
+  { id: "summary", emoji: "📊", title: "סיכומים",
+    tip: "בטאב 'סיכומים' אתה רואה מה סגרת — יום, שבוע, חודש — ואני נותנת לך משוב על ההתקדמות.",
+    detect: () => true },
+];
+
 /* ---------- קריאה ל-AI (דורשת מפתח של בני) ----------
    מחוץ לסביבת Claude צריך מפתח Anthropic. נשמר מקומית בדפדפן.
    אם אין מפתח — הפיצ'רים האלה מציגים הודעה מנומסת. */
@@ -292,6 +324,14 @@ function App() {
   // ----- העלאת קובץ למאמן (דף אשראי, קבלה, רשימה, צילום מסך) -----
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadPreview, setUploadPreview] = useState(null); // {kind, items:[], summary}
+  // ----- קריאה מהחווה (שירת האדמה) -----
+  const [farmTasks, setFarmTasks] = useState([]);   // משימות פתוחות שנקראו מהחווה
+  const [farmLoaded, setFarmLoaded] = useState(false);
+  const [farmReadBusy, setFarmReadBusy] = useState(false);
+  // ----- אולגה מלמדת -----
+  const [tipDismissed, setTipDismissed] = useState({}); // {capId: lastDayShown}
+  const [showTour, setShowTour] = useState(false);
+  const [tourSeen, setTourSeen] = useState(false);
   // ----- טקס בוקר (בהשראת ג'ו דיספנזה) -----
   const [ritualOpen, setRitualOpen] = useState(false);
   const [ritualStep, setRitualStep] = useState(0);  // 0=עוגן 1=כוונה 2=חזרה מנטלית 3=פגישות 4=שלושת הדברים 5=סגירה
@@ -323,6 +363,9 @@ function App() {
         if (d.ritualDoneDay) setRitualDoneDay(d.ritualDoneDay);
         if (d.ritualFeeling) setRitualFeeling(d.ritualFeeling);
         if (d.ritualVision) setRitualVision(d.ritualVision);
+        if (d.tipDismissed) setTipDismissed(d.tipDismissed);
+        if (d.tourSeen) setTourSeen(true);
+        else setShowTour(true); // סיור ראשוני בפעם הראשונה
       }
       setLoaded(true);
     }).catch((e) => { console.warn(e); setLoaded(true); });
@@ -338,10 +381,11 @@ function App() {
       lastAnalyzedAt, patterns: patterns || null,
       eveningNotes, shopList, money,
       ritualDoneDay, ritualFeeling, ritualVision,
+      tourSeen, tipDismissed,
       updatedAt: new Date().toISOString(),
     };
     DOC_REF().set(payload, { merge: true }).catch((e) => console.warn("save failed", e));
-  }, [tasks, habitLog, focus, checkedInDay, patterns, lastAnalyzedAt, eveningNotes, shopList, money, ritualDoneDay, ritualFeeling, ritualVision, loaded]);
+  }, [tasks, habitLog, focus, checkedInDay, patterns, lastAnalyzedAt, eveningNotes, shopList, money, ritualDoneDay, ritualFeeling, ritualVision, tourSeen, tipDismissed, loaded]);
 
   const saveKey = (v) => {
     setApiKey(v);
@@ -563,6 +607,22 @@ function App() {
   }, [coachData]);
 
   const speakCoach = () => speak(coachText);
+
+  // ----- אולגה מלמדת: בוחר את הטיפ הכי רלוונטי שבני לא מנצל -----
+  const dailyTip = useMemo(() => {
+    const feedbackCount = tasks.reduce((n, t) => n + (bonusArr(t.feedback).length), 0);
+    const state = { tasks, money, shopList, slot: coachData.slot, ritualDoneDay, tk, feedbackCount };
+    // יכולות שרלוונטיות (detect=true) ושלא נדחו היום
+    const candidates = CAPABILITIES.filter((c) => {
+      try { return c.detect(state); } catch (e) { return false; }
+    }).filter((c) => tipDismissed[c.id] !== tk);
+    if (candidates.length === 0) return null;
+    // בוחר לפי היום בשנה — מסתובב בין הטיפים
+    const idx = new Date().getDate() % candidates.length;
+    return candidates[idx];
+  }, [tasks, money, shopList, coachData.slot, ritualDoneDay, tk, tipDismissed]);
+
+  const dismissTip = (id) => setTipDismissed((p) => ({ ...p, [id]: tk }));
   const deepCoach = async () => {
     setCoachBusy(true); setCoachDeep("");
     try {
@@ -1173,6 +1233,52 @@ function App() {
     ["marketing", "📢 שיווק"],
     ["admin", "📋 ניהול"],
   ];
+  const farmAreaLabel = (a) => (FARM_AREAS.find(([k]) => k === a) || [a, a])[1];
+  // מיפוי uid של עובדי החווה לשמות (לזיהוי "מי תקוע")
+  const FARM_WORKERS = {
+    [window.FARM_MY_UID]: "בני",
+  };
+  const farmWorkerName = (uid) => FARM_WORKERS[uid] || (uid === window.FARM_MY_UID ? "בני" : "צוות החווה");
+
+  // קריאה מהחווה — מושך את מערך oT ומסנן משימות פתוחות
+  const readFarm = async () => {
+    if (!farmReady) { setFarmLoaded(true); return; }
+    setFarmReadBusy(true);
+    try {
+      const snap = await FARM_DOC().get();
+      if (snap.exists) {
+        const data = snap.data();
+        const oT = Array.isArray(data.oT) ? data.oT : Object.values(data.oT || {});
+        const open = oT.filter((t) => t && !t.done && (t.title || "").trim());
+        setFarmTasks(open);
+      }
+      setFarmLoaded(true);
+    } catch (e) {
+      console.warn("readFarm failed:", e);
+      setFarmLoaded(true);
+    } finally { setFarmReadBusy(false); }
+  };
+
+  // קריאה ראשונית מהחווה בעת טעינת האפליקציה
+  useEffect(() => { readFarm(); }, []);
+
+  // סיכום "מי תקוע" בחווה — קיבוץ לפי בעלים
+  const farmByOwner = useMemo(() => {
+    const map = {};
+    farmTasks.forEach((t) => {
+      const who = farmWorkerName(t.uid || t.createdBy);
+      if (!map[who]) map[who] = [];
+      map[who].push(t);
+    });
+    return map;
+  }, [farmTasks]);
+
+  // משימות חווה שעבר זמנן (תקועות)
+  const farmStale = useMemo(() =>
+    farmTasks.filter((t) => {
+      const d = t.scheduledDate || t.due;
+      return d && /^\d{4}-\d{2}-\d{2}$/.test(d) && daysUntil(d) < 0;
+    }), [farmTasks]);
 
   const sendToFarm = async () => {
     if (!editTask) return;
@@ -1262,6 +1368,17 @@ function App() {
             <div style={S.coachMsg}>{coachText}</div>
             {coachDeep && <div style={S.coachDeep}>{coachDeep}</div>}
 
+            {/* טיפ יומי — אולגה מלמדת */}
+            {dailyTip && (
+              <div style={S.tipCard}>
+                <div style={S.tipHead}>
+                  <span style={S.tipBadge}>💡 ידעת?</span>
+                  <button style={S.tipDismiss} onClick={() => dismissTip(dailyTip.id)}>✕</button>
+                </div>
+                <div style={S.tipText}>{dailyTip.emoji} {dailyTip.tip}</div>
+              </div>
+            )}
+
             {/* כפתור טקס בוקר — מופיע בבוקר אם עוד לא נעשה היום */}
             {coachData.slot === "morning" && ritualDoneDay !== tk && (
               <button style={S.ritualStartBtn} onClick={startRitual}>
@@ -1350,6 +1467,56 @@ function App() {
               <button style={S.coachReset} onClick={clearCoachThread}>נקה שיחה</button>
             )}
           </section>
+
+          {/* ===== מבט-על חווה (שירת האדמה) ===== */}
+          {farmReady && (
+            <section style={S.farmCard}>
+              <div style={S.farmCardHead}>
+                <span style={S.farmCardTitle}>🌾 שירת האדמה · מבט-על</span>
+                <button style={S.farmRefresh} disabled={farmReadBusy} onClick={readFarm}>
+                  {farmReadBusy ? "טוען…" : "↻ רענן"}
+                </button>
+              </div>
+
+              {!farmLoaded ? (
+                <div style={S.farmEmpty}>טוען מהחווה…</div>
+              ) : farmTasks.length === 0 ? (
+                <div style={S.farmEmpty}>אין משימות פתוחות בחווה כרגע ✓</div>
+              ) : (
+                <React.Fragment>
+                  {/* שורת סטטוס */}
+                  <div style={S.farmStats}>
+                    <div style={S.farmStat}><div style={S.farmStatNum}>{farmTasks.length}</div><div style={S.farmStatLbl}>פתוחות</div></div>
+                    <div style={S.farmStat}><div style={{ ...S.farmStatNum, color: farmStale.length ? C.danger : C.good }}>{farmStale.length}</div><div style={S.farmStatLbl}>תקועות</div></div>
+                    <div style={S.farmStat}><div style={S.farmStatNum}>{Object.keys(farmByOwner).length}</div><div style={S.farmStatLbl}>אנשים</div></div>
+                  </div>
+
+                  {/* התרעת תקיעות */}
+                  {farmStale.length > 0 && (
+                    <div style={S.farmAlert}>
+                      🔴 {farmStale.length} {farmStale.length === 1 ? "משימה תקועה" : "משימות תקועות"} בחווה — הכי דחופה: {farmStale[0].title}
+                    </div>
+                  )}
+
+                  {/* מי תקוע — לפי בעלים */}
+                  <div style={S.farmOwnerTitle}>מי על מה:</div>
+                  {Object.entries(farmByOwner).map(([who, list]) => (
+                    <div key={who} style={S.farmOwnerRow}>
+                      <div style={S.farmOwnerName}>{who} <span style={S.farmOwnerCount}>{list.length}</span></div>
+                      <div style={S.farmOwnerTasks}>
+                        {list.slice(0, 4).map((t, i) => (
+                          <div key={i} style={S.farmTaskChip}>
+                            {farmAreaLabel(t.area).split(" ")[0]} {t.title}
+                          </div>
+                        ))}
+                        {list.length > 4 && <div style={S.farmMore}>ועוד {list.length - 4}…</div>}
+                      </div>
+                    </div>
+                  ))}
+                </React.Fragment>
+              )}
+            </section>
+          )}
 
           {(() => {
             const todays = tasks.filter((t) => t.due === tk && t.status !== "done");
@@ -1997,6 +2164,10 @@ function App() {
         </section>
       )}
 
+      <button style={S.whatCanDo} onClick={() => setShowTour(true)}>
+        🌻 מה אולגה יכולה לעשות? — הצג שוב את היכולות
+      </button>
+
       <div style={S.keyBox}>
         <button style={S.keyToggle} onClick={() => setShowKey(!showKey)}>
           {showKey ? "▾" : "▸"} חיבור AI {apiKey ? "· מחובר ✓" : "· לא מחובר"}
@@ -2150,6 +2321,32 @@ function App() {
         </div>
       )}
 
+      {/* ===== סיור ראשוני — אולגה מציגה את עצמה ===== */}
+      {showTour && (
+        <div style={S.ritualWrap}>
+          <div style={S.ritualModal}>
+            <h2 style={S.ritualTitle}>🌻 נעים מאוד, אני אולגה</h2>
+            <div style={S.ritualBody}>
+              אני העוזרת האישית שלך, בני. הנה מה שאני יכולה לעשות בשבילך:
+            </div>
+            <div style={S.tourList}>
+              {CAPABILITIES.slice(0, 6).map((c) => (
+                <div key={c.id} style={S.tourItem}>
+                  <span style={S.tourEmoji}>{c.emoji}</span>
+                  <div><div style={S.tourItemTitle}>{c.title}</div></div>
+                </div>
+              ))}
+            </div>
+            <div style={S.ritualBody}>
+              לא צריך לזכור הכל — אני אזכיר לך טיפ אחד כל יום, ואדחוף אותך להשתמש במה שיעזור.
+            </div>
+            <button style={S.ritualNextBtn} onClick={() => { setShowTour(false); setTourSeen(true); }}>
+              יאללה, בוא נתחיל
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ===== מודל טקס בוקר ===== */}
       {ritualOpen && (() => {
         const step = ritualSteps[ritualStep];
@@ -2254,6 +2451,35 @@ const S = {
   alertBanner: { display: "flex", alignItems: "center", gap: 12, borderRadius: 16, padding: "14px 18px", marginBottom: 14, boxShadow: "0 4px 16px rgba(0,0,0,0.15)" },
   alertIcon: { fontSize: 24, flexShrink: 0 },
   alertText: { fontSize: 15, fontWeight: 700, color: "#fff", lineHeight: 1.4 },
+  // ===== כרטיס מבט-על חווה =====
+  farmCard: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 16, marginBottom: 16, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  farmCardHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  farmCardTitle: { fontSize: 16, fontWeight: 800, color: "#00803f" },
+  farmRefresh: { background: "transparent", border: "1px solid " + C.line, color: C.dim, borderRadius: 9, padding: "6px 12px", fontSize: 12.5, cursor: "pointer" },
+  farmEmpty: { textAlign: "center", color: C.dim, fontSize: 14, padding: "14px 0" },
+  farmStats: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 },
+  farmStat: { background: C.panel2, borderRadius: 10, padding: "10px 6px", textAlign: "center" },
+  farmStatNum: { fontSize: 22, fontWeight: 800, color: C.text, fontFamily: "'Frank Ruhl Libre', serif" },
+  farmStatLbl: { fontSize: 11, color: C.dim, marginTop: 2 },
+  farmAlert: { background: "#fbeae5", border: "1px solid #f0c4b8", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, fontWeight: 600, color: "#a8341f", marginBottom: 12 },
+  farmOwnerTitle: { fontSize: 12, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
+  farmOwnerRow: { marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid " + C.line },
+  farmOwnerName: { fontSize: 14.5, fontWeight: 700, color: C.text, marginBottom: 6 },
+  farmOwnerCount: { fontSize: 11, background: C.panel2, color: C.dim, borderRadius: 10, padding: "1px 8px", fontWeight: 600 },
+  farmOwnerTasks: { display: "flex", flexWrap: "wrap", gap: 6 },
+  farmTaskChip: { background: "rgba(0,200,117,0.1)", border: "1px solid rgba(0,200,117,0.3)", color: "#00803f", borderRadius: 8, padding: "4px 10px", fontSize: 12.5, fontWeight: 500 },
+  farmMore: { color: C.dim, fontSize: 12.5, alignSelf: "center" },
+  // ===== אולגה מלמדת =====
+  tipCard: { background: "rgba(243,236,220,0.1)", border: "1px solid rgba(201,118,79,0.35)", borderRadius: 12, padding: "12px 14px", marginTop: 14 },
+  tipHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
+  tipBadge: { fontSize: 12, fontWeight: 800, color: "#c9764f", letterSpacing: 0.5 },
+  tipDismiss: { background: "transparent", border: "none", color: "#a8957d", fontSize: 15, cursor: "pointer", padding: 0 },
+  tipText: { fontSize: 14.5, lineHeight: 1.6, color: "#f3ecdc" },
+  tourList: { display: "flex", flexDirection: "column", gap: 10, margin: "16px 0" },
+  tourItem: { display: "flex", alignItems: "center", gap: 12, background: "rgba(243,236,220,0.08)", borderRadius: 10, padding: "10px 14px" },
+  tourEmoji: { fontSize: 24, flexShrink: 0 },
+  tourItemTitle: { fontSize: 15, fontWeight: 700, color: "#f3ecdc" },
+  whatCanDo: { width: "100%", marginTop: 20, background: "transparent", color: "#b3552d", border: "1px solid " + C.line, borderRadius: 12, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer" },
   uploadPreview: { marginTop: 12, background: "rgba(243,236,220,0.08)", border: "1px solid rgba(201,118,79,0.4)", borderRadius: 12, padding: 14 },
   uploadSummary: { fontSize: 14.5, fontWeight: 700, color: "#f3ecdc", marginBottom: 10 },
   uploadList: { display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto", marginBottom: 12 },
