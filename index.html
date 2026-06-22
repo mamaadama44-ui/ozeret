@@ -212,6 +212,9 @@ const CAPABILITIES = [
   { id: "summary", emoji: "📊", title: "סיכומים",
     tip: "בטאב 'סיכומים' אתה רואה מה סגרת — יום, שבוע, חודש — ואני נותנת לך משוב על ההתקדמות.",
     detect: () => true },
+  { id: "areas", emoji: "📁", title: "תחומים",
+    tip: "אתה יכול לארגן משימות לפי תחום — שיקום, בירוקרטיה, מטבח חוץ — ולראות הכל מרוכז. ערוך משימה ובחר 'תחום', או הוסף חדש.",
+    detect: (s) => !s.tasks.some((t) => t.area) },
 ];
 
 /* ---------- קריאה ל-AI (דורשת מפתח של בני) ----------
@@ -267,6 +270,8 @@ function App() {
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("home");
   const [tasks, setTasks] = useState(SEED_TASKS);
+  const [areas, setAreas] = useState([]); // תחומים: שיקום, בירוקרטיה, מטבח חוץ...
+  const [openArea, setOpenArea] = useState(null); // תחום פתוח כרגע לצפייה
   const [habits] = useState(SEED_HABITS);
   const [habitLog, setHabitLog] = useState({});
   const [focus, setFocus] = useState("");
@@ -364,6 +369,7 @@ function App() {
         if (d.ritualFeeling) setRitualFeeling(d.ritualFeeling);
         if (d.ritualVision) setRitualVision(d.ritualVision);
         if (d.tipDismissed) setTipDismissed(d.tipDismissed);
+        if (Array.isArray(d.areas)) setAreas(d.areas);
         if (d.tourSeen) setTourSeen(true);
         else setShowTour(true); // סיור ראשוני בפעם הראשונה
       }
@@ -381,11 +387,11 @@ function App() {
       lastAnalyzedAt, patterns: patterns || null,
       eveningNotes, shopList, money,
       ritualDoneDay, ritualFeeling, ritualVision,
-      tourSeen, tipDismissed,
+      tourSeen, tipDismissed, areas,
       updatedAt: new Date().toISOString(),
     };
     DOC_REF().set(payload, { merge: true }).catch((e) => console.warn("save failed", e));
-  }, [tasks, habitLog, focus, checkedInDay, patterns, lastAnalyzedAt, eveningNotes, shopList, money, ritualDoneDay, ritualFeeling, ritualVision, tourSeen, tipDismissed, loaded]);
+  }, [tasks, habitLog, focus, checkedInDay, patterns, lastAnalyzedAt, eveningNotes, shopList, money, ritualDoneDay, ritualFeeling, ritualVision, tourSeen, tipDismissed, areas, loaded]);
 
   const saveKey = (v) => {
     setApiKey(v);
@@ -623,6 +629,30 @@ function App() {
   }, [tasks, money, shopList, coachData.slot, ritualDoneDay, tk, tipDismissed]);
 
   const dismissTip = (id) => setTipDismissed((p) => ({ ...p, [id]: tk }));
+
+  // ----- תחומים (שיקום, בירוקרטיה, מטבח חוץ...) -----
+  const addArea = (name) => {
+    const clean = (name || "").trim();
+    if (!clean) return null;
+    const existing = areas.find((a) => a.name === clean);
+    if (existing) return existing.id;
+    const id = "area" + Date.now();
+    setAreas((p) => [...p, { id, name: clean, createdAt: tk }]);
+    return id;
+  };
+  const areaName = (id) => (areas.find((a) => a.id === id) || {}).name || "";
+  // משימות פתוחות מקובצות לפי תחום
+  const tasksByArea = useMemo(() => {
+    const map = {};
+    areas.forEach((a) => { map[a.id] = []; });
+    const noArea = [];
+    tasks.filter((t) => t.status !== "done").forEach((t) => {
+      if (t.area && map[t.area]) map[t.area].push(t);
+      else noArea.push(t);
+    });
+    return { map, noArea };
+  }, [tasks, areas]);
+
   const deepCoach = async () => {
     setCoachBusy(true); setCoachDeep("");
     try {
@@ -667,32 +697,47 @@ function App() {
         'נהלי שיחה טבעית עם בני. עני קצר (2-4 משפטים).\n' +
         'חשוב: כשבני מבקש להוסיף משימה, פגישה, או תזכורת (למשל "תוסיפי פגישה עם נדב שלישי ב-10", "תזכירי לי לקנות זרעים", "צריך לתקן את הגדר") — הוסיפי אותם למערך addItems. זהי שעה (אם נאמרה) ותאריך. אם בני לא ציין תאריך לפגישה — נחשי הגיוני (היום/מחר/היום בשבוע שציין).\n' +
         'נושאים: farm (חווה), judaica (יודאיקה), couple (זוגיות), general (כללי). בעלים: בני/עמית/סתיו/גיא/אליק.\n' +
+        'תחומים קיימים: ' + (areas.length ? areas.map((a) => '"' + a.name + '"').join(", ") : "אין עדיין") + '.\n' +
+        'לכל משימה שאת מוסיפה — נסי לשייך אותה לתחום. השתמשי בשדה "area":\n' +
+        '  • אם היא שייכת לתחום קיים — שימי את שמו המדויק.\n' +
+        '  • אם היא שייכת לתחום חדש שברור מההקשר (למשל "טופס לביטוח לאומי" → "בירוקרטיה") — שימי את השם החדש.\n' +
+        '  • אם את לא בטוחה לאיזה תחום — שימי "area":"?" ושאלי את בני בתשובה לאיזה תחום לשייך.\n' +
         'החזירי JSON בלבד בלי טקסט נוסף:\n' +
-        '{"reply":"תשובה קצרה בעברית","addItems":[{"title":"...","due":"YYYY-MM-DD או ריק","startTime":"HH:MM או ריק","topic":"general","owner":"בני","prio":"med","isMeeting":true/false}]}\n' +
+        '{"reply":"תשובה קצרה בעברית","addItems":[{"title":"...","due":"YYYY-MM-DD או ריק","startTime":"HH:MM או ריק","topic":"general","area":"שם תחום / ? / ריק","owner":"בני","prio":"med","isMeeting":true/false}]}\n' +
         'אם אין מה להוסיף — addItems מערך ריק.\n\n' +
         'מצב נוכחי: ' + slotHe[d.slot] + '. להיום: ' + (d.dueToday.length || 0) + '. סגר היום: ' + (d.doneToday.length || 0) + '.\n' +
         'המשימות הפתוחות:\n' + (taskList || "אין") + '\n\nהתאריך היום: ' + tk + '\n\nהשיחה עד כה:\n' + convo,
         apiKey);
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       const validTopics = ["farm", "judaica", "couple", "general"];
-      const items = (parsed.addItems || []).map((it, i) => ({
-        id: "voice" + Date.now() + "-" + i,
-        title: (it.title || "").trim(),
-        due: /^\d{4}-\d{2}-\d{2}$/.test(it.due) ? it.due : "",
-        startTime: /^\d{2}:\d{2}$/.test(it.startTime) ? it.startTime : "",
-        cat: it.isMeeting ? "פגישה" : "כללי",
-        topic: validTopics.includes(it.topic) ? it.topic : "general",
-        repeat: "once",
-        prio: ["high", "med", "low"].includes(it.prio) ? it.prio : "med",
-        status: "todo",
-        owner: it.owner || "בני",
-        steps: [], feedback: [],
-      })).filter((it) => it.title);
+      const items = (parsed.addItems || []).map((it, i) => {
+        // שיוך תחום: קיים, חדש, או לא ידוע
+        let areaId = "";
+        const aRaw = (it.area || "").trim();
+        if (aRaw && aRaw !== "?") {
+          const found = areas.find((a) => a.name === aRaw);
+          areaId = found ? found.id : addArea(aRaw); // יוצר תחום חדש אם לא קיים
+        }
+        return {
+          id: "voice" + Date.now() + "-" + i,
+          title: (it.title || "").trim(),
+          due: /^\d{4}-\d{2}-\d{2}$/.test(it.due) ? it.due : "",
+          startTime: /^\d{2}:\d{2}$/.test(it.startTime) ? it.startTime : "",
+          cat: it.isMeeting ? "פגישה" : "כללי",
+          topic: validTopics.includes(it.topic) ? it.topic : "general",
+          area: areaId,
+          repeat: "once",
+          prio: ["high", "med", "low"].includes(it.prio) ? it.prio : "med",
+          status: "todo",
+          owner: it.owner || "בני",
+          steps: [], feedback: [],
+        };
+      }).filter((it) => it.title);
       if (items.length) setTasks((p) => [...p, ...items]);
       const replyText = parsed.reply || "";
       setCoachThread((p) => [...p, {
         role: "ai", text: replyText,
-        added: items.map((it) => it.title + (it.startTime ? " (" + it.startTime + ")" : "") + (it.due ? " · " + fmtHe(it.due) : "")),
+        added: items.map((it) => it.title + (it.area ? " [📁 " + areaName(it.area) + "]" : "") + (it.startTime ? " (" + it.startTime + ")" : "") + (it.due ? " · " + fmtHe(it.due) : "")),
       }]);
       if (voiceOn && replyText) speak(replyText);
     } catch (e) {
@@ -1115,6 +1160,7 @@ function App() {
       owner: editTask.owner,
       cat: editTask.cat,
       topic: editTask.topic || "general",
+      area: editTask.area || "",
       repeat: editTask.repeat || "once",
       startTime: editTask.startTime || "",
       durMin: editTask.durMin || "",
@@ -1515,6 +1561,46 @@ function App() {
                   ))}
                 </React.Fragment>
               )}
+            </section>
+          )}
+
+          {/* ===== תחומים — משימות מרוכזות לפי תחום ===== */}
+          {areas.length > 0 && (
+            <section style={S.areasCard}>
+              <div style={S.areasHead}>
+                <span style={S.areasTitle}>📁 התחומים שלי</span>
+                <span style={S.areasHint}>לחץ לפתיחה</span>
+              </div>
+              {areas.map((a) => {
+                const list = tasksByArea.map[a.id] || [];
+                const overdue = list.filter((t) => t.due && daysUntil(t.due) < 0).length;
+                return (
+                  <div key={a.id} style={S.areaRow} onClick={() => setOpenArea(openArea === a.id ? null : a.id)}>
+                    <div style={S.areaRowTop}>
+                      <span style={S.areaName}>📁 {a.name}</span>
+                      <span style={S.areaCount}>
+                        {list.length} {list.length === 1 ? "פתוחה" : "פתוחות"}
+                        {overdue > 0 && <span style={S.areaOverdue}> · {overdue} באיחור</span>}
+                      </span>
+                    </div>
+                    {openArea === a.id && (
+                      <div style={S.areaTasks}>
+                        {list.length === 0 ? (
+                          <div style={S.areaEmpty}>אין משימות פתוחות בתחום הזה ✓</div>
+                        ) : (
+                          list.map((t) => (
+                            <div key={t.id} style={S.areaTask} onClick={(e) => { e.stopPropagation(); setStatus(t.id, "done"); }}>
+                              <span style={S.areaTaskCheck}>○</span>
+                              <span style={S.areaTaskTitle}>{t.title}</span>
+                              {t.due && <span style={{ ...S.areaTaskDue, color: daysUntil(t.due) < 0 ? C.danger : C.dim }}>{fmtHe(t.due)}</span>}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </section>
           )}
 
@@ -2273,6 +2359,24 @@ function App() {
                 </button>
               ))}
             </div>
+            <label style={S.editLabel}>תחום (אופציונלי)</label>
+            <div style={S.editChips}>
+              <button onClick={() => setEditTask({ ...editTask, area: "" })}
+                style={{ ...S.editChip, ...((!editTask.area) ? { background: C.dim, color: "#fff", borderColor: C.dim } : {}) }}>ללא</button>
+              {areas.map((a) => (
+                <button key={a.id} onClick={() => setEditTask({ ...editTask, area: a.id })}
+                  style={{ ...S.editChip, ...(editTask.area === a.id ? { background: C.accent, color: "#fff", borderColor: C.accent } : {}) }}>
+                  📁 {a.name}
+                </button>
+              ))}
+            </div>
+            <div style={S.areaAddRow}>
+              <input style={S.areaAddInput} placeholder="תחום חדש (שיקום, בירוקרטיה…)"
+                value={editTask._newArea || ""} onChange={(e) => setEditTask({ ...editTask, _newArea: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter" && editTask._newArea && editTask._newArea.trim()) { const id = addArea(editTask._newArea); setEditTask({ ...editTask, area: id, _newArea: "" }); } }} />
+              <button style={S.areaAddBtn} onClick={() => { if (editTask._newArea && editTask._newArea.trim()) { const id = addArea(editTask._newArea); setEditTask({ ...editTask, area: id, _newArea: "" }); } }}>+ תחום</button>
+            </div>
+
             <label style={S.editLabel}>תדירות</label>
             <div style={S.editChips}>
               {Object.entries(REPEATS).map(([k, l]) => (
@@ -2469,6 +2573,25 @@ const S = {
   farmOwnerTasks: { display: "flex", flexWrap: "wrap", gap: 6 },
   farmTaskChip: { background: "rgba(0,200,117,0.1)", border: "1px solid rgba(0,200,117,0.3)", color: "#00803f", borderRadius: 8, padding: "4px 10px", fontSize: 12.5, fontWeight: 500 },
   farmMore: { color: C.dim, fontSize: 12.5, alignSelf: "center" },
+  // ===== תחומים =====
+  areasCard: { background: C.panel, border: "1px solid " + C.line, borderRadius: 16, padding: 16, marginBottom: 16, boxShadow: "0 1px 3px rgba(20,30,60,0.06)" },
+  areasHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  areasTitle: { fontSize: 16, fontWeight: 800, color: C.text },
+  areasHint: { fontSize: 11.5, color: C.dim },
+  areaRow: { borderBottom: "1px solid " + C.line, padding: "10px 0", cursor: "pointer" },
+  areaRowTop: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  areaName: { fontSize: 14.5, fontWeight: 700, color: C.text },
+  areaCount: { fontSize: 13, color: C.dim, fontWeight: 600 },
+  areaOverdue: { color: C.danger, fontWeight: 700 },
+  areaTasks: { marginTop: 10, display: "flex", flexDirection: "column", gap: 6, paddingRight: 6 },
+  areaEmpty: { fontSize: 13, color: C.dim, padding: "6px 0" },
+  areaTask: { display: "flex", alignItems: "center", gap: 9, background: C.panel2, borderRadius: 8, padding: "9px 11px", cursor: "pointer" },
+  areaTaskCheck: { fontSize: 16, color: C.dim, flexShrink: 0 },
+  areaTaskTitle: { flex: 1, fontSize: 13.5, color: C.text },
+  areaTaskDue: { fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" },
+  areaAddRow: { display: "flex", gap: 7, marginTop: 8 },
+  areaAddInput: { flex: 1, background: C.panel2, border: "1px solid " + C.line, color: C.text, borderRadius: 9, padding: "9px 11px", fontSize: 13.5, outline: "none", boxSizing: "border-box" },
+  areaAddBtn: { background: C.accent, color: "#fff", border: "none", borderRadius: 9, padding: "9px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   // ===== אולגה מלמדת =====
   tipCard: { background: "rgba(243,236,220,0.1)", border: "1px solid rgba(201,118,79,0.35)", borderRadius: 12, padding: "12px 14px", marginTop: 14 },
   tipHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
