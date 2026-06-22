@@ -215,6 +215,9 @@ const CAPABILITIES = [
   { id: "areas", emoji: "📁", title: "תחומים",
     tip: "אתה יכול לארגן משימות לפי תחום — שיקום, בירוקרטיה, מטבח חוץ — ולראות הכל מרוכז. ערוך משימה ובחר 'תחום', או הוסף חדש.",
     detect: (s) => !s.tasks.some((t) => t.area) },
+  { id: "taskControl", emoji: "🎯", title: "שליטה במשימות בדיבור",
+    tip: "אתה יכול לדבר אליי לא רק כדי להוסיף — גם 'סיימתי את הגדר' (אסגור), 'תדחי את X למחר' (אעדכן), או 'תמחקי את Y'. אני מנהלת לך את המשימות.",
+    detect: () => true },
 ];
 
 /* ---------- קריאה ל-AI (דורשת מפתח של בני) ----------
@@ -686,8 +689,9 @@ function App() {
     setCoachBusy(true);
     try {
       const d = coachData;
-      const taskList = d.open.slice(0, 20).map((t) =>
-        "• " + t.title + (t.due ? " (יעד " + fmtHe(t.due) + ", " + (daysUntil(t.due) < 0 ? "באיחור" : "עוד " + daysUntil(t.due) + " י׳") + ")" : " (בלי תאריך)") + " [" + (t.owner || "בני") + "]"
+      const openForRef = d.open.slice(0, 30);
+      const taskList = openForRef.map((t, i) =>
+        "[" + (i + 1) + "] " + t.title + (t.due ? " (יעד " + fmtHe(t.due) + ", " + (daysUntil(t.due) < 0 ? "באיחור" : "עוד " + daysUntil(t.due) + " י׳") + ")" : " (בלי תאריך)") + (t.area ? " {📁" + areaName(t.area) + "}" : "") + " [" + (t.owner || "בני") + "]"
       ).join("\n");
       const convo = [{ role: "ai", text: coachDeep || coachText }, ...newThread]
         .map((m) => (m.role === "user" ? "בני: " : "אולגה: ") + m.text).join("\n");
@@ -702,9 +706,16 @@ function App() {
         '  • אם היא שייכת לתחום קיים — שימי את שמו המדויק.\n' +
         '  • אם היא שייכת לתחום חדש שברור מההקשר (למשל "טופס לביטוח לאומי" → "בירוקרטיה") — שימי את השם החדש.\n' +
         '  • אם את לא בטוחה לאיזה תחום — שימי "area":"?" ושאלי את בני בתשובה לאיזה תחום לשייך.\n' +
+        'פעולות על משימות קיימות: בני יכול לבקש לסגור/לעדכן/למחוק/לשייך משימה קיימת. המשימות הפתוחות ממוספרות ברשימה למטה ([1], [2]...).\n' +
+        '  • "סיימתי את הגדר" / "סגרי את X" → actions עם {"op":"done","ref":מספר}.\n' +
+        '  • "תדחי את X למחר" / "תשני עדיפות" → {"op":"update","ref":מספר,"due":"YYYY-MM-DD","prio":"high/med/low"}.\n' +
+        '  • "תמחקי את X" → {"op":"delete","ref":מספר}.\n' +
+        '  • "תעבירי את X לתחום שיקום" → {"op":"area","ref":מספר,"area":"שם תחום"}.\n' +
+        '  • אם יש כמה משימות שתואמות ואת לא בטוחה איזו — אל תבצעי, שאלי את בני איזו בדיוק (ציטטי את האפשרויות).\n' +
+        '  • ref = המספר בסוגריים המרובעים של המשימה ברשימה.\n' +
         'החזירי JSON בלבד בלי טקסט נוסף:\n' +
-        '{"reply":"תשובה קצרה בעברית","addItems":[{"title":"...","due":"YYYY-MM-DD או ריק","startTime":"HH:MM או ריק","topic":"general","area":"שם תחום / ? / ריק","owner":"בני","prio":"med","isMeeting":true/false}]}\n' +
-        'אם אין מה להוסיף — addItems מערך ריק.\n\n' +
+        '{"reply":"תשובה קצרה בעברית","addItems":[{"title":"...","due":"YYYY-MM-DD או ריק","startTime":"HH:MM או ריק","topic":"general","area":"שם תחום / ? / ריק","owner":"בני","prio":"med","isMeeting":true/false}],"actions":[{"op":"done/update/delete/area","ref":מספר,"due":"","prio":"","area":""}]}\n' +
+        'אם אין מה להוסיף — addItems מערך ריק. אם אין פעולות — actions מערך ריק.\n\n' +
         'מצב נוכחי: ' + slotHe[d.slot] + '. להיום: ' + (d.dueToday.length || 0) + '. סגר היום: ' + (d.doneToday.length || 0) + '.\n' +
         'המשימות הפתוחות:\n' + (taskList || "אין") + '\n\nהתאריך היום: ' + tk + '\n\nהשיחה עד כה:\n' + convo,
         apiKey);
@@ -734,10 +745,52 @@ function App() {
         };
       }).filter((it) => it.title);
       if (items.length) setTasks((p) => [...p, ...items]);
+
+      // ----- ביצוע פעולות על משימות קיימות (סגירה/עדכון/מחיקה/שיוך) -----
+      const actions = Array.isArray(parsed.actions) ? parsed.actions : [];
+      const actionLog = [];
+      if (actions.length) {
+        setTasks((prev) => {
+          let next = [...prev];
+          actions.forEach((act) => {
+            const ref = parseInt(act.ref, 10);
+            if (!ref || ref < 1 || ref > openForRef.length) return; // ref לא תקין
+            const target = openForRef[ref - 1];
+            const idx = next.findIndex((t) => t.id === target.id);
+            if (idx < 0) return;
+            if (act.op === "done") {
+              next[idx] = { ...next[idx], status: "done", doneAt: tk };
+              actionLog.push("✓ סגרתי: " + target.title);
+            } else if (act.op === "delete") {
+              actionLog.push("🗑 מחקתי: " + target.title);
+              next = next.filter((t) => t.id !== target.id);
+            } else if (act.op === "update") {
+              const upd = { ...next[idx] };
+              if (/^\d{4}-\d{2}-\d{2}$/.test(act.due)) upd.due = act.due;
+              if (["high", "med", "low"].includes(act.prio)) upd.prio = act.prio;
+              next[idx] = upd;
+              actionLog.push("✎ עדכנתי: " + target.title + (act.due ? " · " + fmtHe(act.due) : "") + (act.prio ? " · " + ({ high: "דחוף", med: "רגיל", low: "נמוך" }[act.prio]) : ""));
+            } else if (act.op === "area") {
+              const aRaw = (act.area || "").trim();
+              if (aRaw) {
+                const found = areas.find((a) => a.name === aRaw);
+                const aId = found ? found.id : addArea(aRaw);
+                next[idx] = { ...next[idx], area: aId };
+                actionLog.push("📁 שייכתי: " + target.title + " → " + aRaw);
+              }
+            }
+          });
+          return next;
+        });
+      }
+
       const replyText = parsed.reply || "";
       setCoachThread((p) => [...p, {
         role: "ai", text: replyText,
-        added: items.map((it) => it.title + (it.area ? " [📁 " + areaName(it.area) + "]" : "") + (it.startTime ? " (" + it.startTime + ")" : "") + (it.due ? " · " + fmtHe(it.due) : "")),
+        added: [
+          ...items.map((it) => it.title + (it.area ? " [📁 " + areaName(it.area) + "]" : "") + (it.startTime ? " (" + it.startTime + ")" : "") + (it.due ? " · " + fmtHe(it.due) : "")),
+          ...actionLog,
+        ],
       }]);
       if (voiceOn && replyText) speak(replyText);
     } catch (e) {
@@ -1468,7 +1521,7 @@ function App() {
             {/* שדה תשובה — מדבר עם המאמן */}
             <div style={S.coachInputRow}>
               <input style={S.coachInput} value={coachInput} onChange={(e) => setCoachInput(e.target.value)}
-                placeholder="דבר/כתוב: שאל, או 'תוסיפי פגישה…' 🎤" onKeyDown={(e) => e.key === "Enter" && coachChat()} />
+                placeholder="דבר/כתוב: הוסף, סגור, או שאל… 🎤" onKeyDown={(e) => e.key === "Enter" && coachChat()} />
               <button style={S.coachSend} disabled={coachBusy || !coachInput.trim()} onClick={coachChat}>שלח</button>
             </div>
 
